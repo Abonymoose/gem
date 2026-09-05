@@ -1,0 +1,13 @@
+SpeechRecognition
+pyttsx3
+psutil
+wikipedia
+requests
+keyboard
+pystray
+Pillow
+pycaw
+comtypes
+groq
+pyautogui
+pywin32

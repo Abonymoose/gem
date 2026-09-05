@@ -1,0 +1,12 @@
+# Build output
+dist/
+build/
+*.spec
+
+# Runtime data
+gem_alarms.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
