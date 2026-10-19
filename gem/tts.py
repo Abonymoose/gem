@@ -64,7 +64,7 @@ class Voice:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def say(self, text, caption_only=False):
+    def say(self, text, caption_only=False, card=None):
         text = clean_for_speech(text or "")
         if not text:
             return
@@ -73,7 +73,7 @@ class Voice:
         if self.on_caption:
             # Longer on screen when it's the only way you'll see the answer.
             seconds = max(4.0, len(text) / 12.0) * (1.0 if speaking else 1.8)
-            self.on_caption(text, seconds)
+            self.on_caption(text, seconds, card)
         if speaking:
             self._queue.put((self._gen, text))
 

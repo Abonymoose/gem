@@ -5,7 +5,7 @@ import sys
 import threading
 
 from .. import actions
-from ..config import DATA_DIR, LOG_FILE, NOTES_FILE, SETTINGS_FILE
+from ..config import DATA_DIR, LOG_FILE, SETTINGS_FILE
 from ..runtime import svc
 from ..state import ALWAYS_LISTENING, PUSH_TO_TALK
 from .icon import make_icon
@@ -68,8 +68,12 @@ class Tray:
         def run(name, **args):
             return lambda: actions.run(name, args)
 
+        def dashboard(page):
+            return lambda: svc.overlay and svc.overlay.open_dashboard(page)
+
         menu = Menu(
-            Item(lambda _: "Gem · " + st.describe(), None, enabled=False),
+            Item("Open Gem", dashboard("home"), default=True),
+            Item(lambda _: st.describe(), None, enabled=False),
             Menu.SEPARATOR,
             Item("Push to talk", run("set_mode", mode=PUSH_TO_TALK), checked=lambda _: st.mode == PUSH_TO_TALK, radio=True),
             Item("Always listening", run("set_mode", mode=ALWAYS_LISTENING),
@@ -84,10 +88,14 @@ class Tray:
             Item("Show overlay", lambda: st.update(hidden=not st.hidden), checked=lambda _: not st.hidden),
             Menu.SEPARATOR,
             Item("Type a command…", lambda: svc.overlay and svc.overlay.open_command_bar()),
-            Item("Open notes", lambda: os.startfile(NOTES_FILE) if os.path.exists(NOTES_FILE) else actions.run("notes_open")),
-            Item("Settings", lambda: os.startfile(SETTINGS_FILE)),
-            Item("Data folder", lambda: os.startfile(DATA_DIR)),
-            Item("Log", lambda: os.startfile(LOG_FILE)),
+            Item("Reminders", dashboard("reminders")),
+            Item("Notes", dashboard("notes")),
+            Item("Settings", dashboard("settings")),
+            Item("More", Menu(
+                Item("Data folder", lambda: os.startfile(DATA_DIR)),
+                Item("Log", lambda: os.startfile(LOG_FILE)),
+                Item("Settings file", lambda: os.startfile(SETTINGS_FILE)),
+            )),
             Item("Start with Windows", lambda: self._toggle_startup(), checked=lambda _: startup_enabled()),
             Menu.SEPARATOR,
             Item("Quit", lambda: svc.assistant.quit()),

@@ -15,6 +15,7 @@ import uuid
 import webbrowser
 
 from ..actions import ActionError, action
+from ..cards import card
 from ..config import PROJECT_DIR, JsonStore
 from ..parse import WEEKDAYS, clock_phrase, duration_phrase, normalize_time_words, parse_duration, parse_when
 from ..runtime import caption, notify, svc
@@ -91,9 +92,10 @@ def set_timer(minutes=0, seconds=0, label=""):
         total = parse_duration("%s %s" % (minutes, seconds)) or 0
     if total <= 0:
         raise ActionError("How long should the timer be?")
-    _add("timer", datetime.datetime.now() + datetime.timedelta(seconds=total), label=label)
-    return "%s timer started." % duration_phrase(total).capitalize() if not label else \
-        "%s timer for %s started." % (duration_phrase(total).capitalize(), label)
+    item = _add("timer", datetime.datetime.now() + datetime.timedelta(seconds=total), label=label)
+    size = re.sub(r"\b(hour|minute|second)s\b", r"\1", duration_phrase(total)).capitalize()   # "2 minute timer"
+    text = "%s timer started." % size if not label else "%s timer for %s started." % (size, label)
+    return card("timer", text, label=label, ends_at=item["at"], total=total)
 
 
 @action("set_alarm", "Alarm.", "time: str like '7:30 am', 'tomorrow 6 pm' or ISO, label?: str")
@@ -102,7 +104,8 @@ def set_alarm(time="", label=""):
     if not at:
         raise ActionError("What time should the alarm be?")
     _add("alarm", at, label=label)
-    return "Alarm set for %s." % clock_phrase(at)
+    return card("alarm", "Alarm set for %s." % clock_phrase(at), title="Alarm", at=at.timestamp(),
+                subtitle=label.capitalize())
 
 
 @action("set_reminder", "Reminder, optionally repeating.", "message: str, time?: str, minutes?: number, repeat_minutes?: number")
@@ -128,9 +131,11 @@ def set_reminder(message="", time=None, minutes=None, repeat_minutes=None):
             for i in data["items"]:
                 if i["id"] == item["id"]:
                     i["repeat_minutes"] = repeat
-        return "I'll remind you to %s every %s, starting at %s." % (
-            message, duration_phrase(repeat * 60), clock_phrase(at))
-    return "I'll remind you to %s at %s." % (message, clock_phrase(at))
+        return card("alarm", "I'll remind you to %s every %s, starting at %s." % (
+            message, duration_phrase(repeat * 60), clock_phrase(at)), title="Repeating reminder", at=at.timestamp(),
+            subtitle="%s · every %s" % (message.capitalize(), duration_phrase(repeat * 60)))
+    return card("alarm", "I'll remind you to %s at %s." % (message, clock_phrase(at)), title="Reminder",
+                at=at.timestamp(), subtitle=message.capitalize())
 
 
 def parse_reminder(text):
@@ -158,11 +163,13 @@ def parse_reminder(text):
 def list_timers():
     items = _items()
     if not items:
-        return "You have no timers, alarms or reminders."
+        return card("timers", "You have no timers, alarms or reminders.", items=[])
     now = datetime.datetime.now()
     descs = [_describe(i, now) for i in items[:6]]
     more = " and %d more" % (len(items) - 6) if len(items) > 6 else ""
-    return "You have " + ", ".join(descs) + more + "."
+    rows = [{"kind": i["kind"], "label": i["label"], "message": i["message"], "at": i["at"],
+             "total": i["at"] - i["created"]} for i in items]
+    return card("timers", "You have " + ", ".join(descs) + more + ".", items=rows)
 
 
 @action("time_left", "How long is left on a timer.", "label?: str", ai=False)
@@ -173,8 +180,10 @@ def time_left(label=""):
     if not timers:
         return "No timers are running."
     t = timers[0]
-    return "%s left%s." % (duration_phrase(max(0, t["at"] - time.time())).capitalize(),
-                           " on the " + t["label"] + " timer" if t["label"] else "")
+    left = max(0, t["at"] - time.time())
+    return card("timer", "%s left%s." % (duration_phrase(left - left % 60 if left > 90 else left).capitalize(),
+                                         " on the " + t["label"] + " timer" if t["label"] else ""),
+                label=t["label"], ends_at=t["at"], total=t["at"] - t["created"])
 
 
 @action("cancel_timer", "Cancel a timer, alarm or reminder.", "match?: str, kind?: timer|alarm|reminder, all?: bool")
@@ -208,7 +217,8 @@ def snooze_alarm(minutes=9):
         _add("reminder", at, message=item["message"] or item["label"])
     else:
         _add(item["kind"], at, label=item["label"], message=item["message"])
-    return "Snoozed until %s." % clock_phrase(at)
+    return card("alarm", "Snoozed until %s." % clock_phrase(at), title="Snoozed", at=at.timestamp(),
+                subtitle=(item["message"] or item["label"] or "").capitalize())
 
 
 def _schedule():
@@ -229,9 +239,12 @@ def schedule_list(day="today"):
     entries = _schedule()
     if day == "week":
         if not entries:
-            return "Your weekly schedule is empty."
-        return " ".join("%s on %s at %s." % (e["name"].capitalize(), " and ".join(d.capitalize() for d in e["days"]),
-                                             _class_dt(e, 0, now).strftime("%I:%M %p").lstrip("0")) for e in entries)
+            return card("schedule", "Your weekly schedule is empty.", title="This week", rows=[])
+        rows = [{"time": _class_dt(e, 0, now).strftime("%I:%M %p").lstrip("0"),
+                 "name": "%s · %s" % (e["name"], ", ".join(d[:3].capitalize() for d in e["days"]))} for e in entries]
+        return card("schedule", " ".join("%s on %s at %s." % (
+            e["name"].capitalize(), " and ".join(d.capitalize() for d in e["days"]),
+            _class_dt(e, 0, now).strftime("%I:%M %p").lstrip("0")) for e in entries), title="This week", rows=rows)
     if day in ("today", "tomorrow"):
         offset = 0 if day == "today" else 1
     elif day in WEEKDAYS:
@@ -241,10 +254,14 @@ def schedule_list(day="today"):
     weekday = WEEKDAYS[(now.weekday() + offset) % 7]
     todays = sorted((e for e in entries if weekday in e.get("days", [])), key=lambda e: e["time"])
     label = day if day in ("today", "tomorrow") else "on " + weekday.capitalize()
+    title = day.capitalize() if day in ("today", "tomorrow") else weekday.capitalize()
     if not todays:
-        return "Nothing on your schedule %s." % label
+        return card("schedule", "Nothing on your schedule %s." % label, title=title, rows=[])
     parts = ["%s at %s" % (e["name"], _class_dt(e, offset, now).strftime("%I:%M %p").lstrip("0")) for e in todays]
-    return "%s you have %s." % (label.capitalize(), ", then ".join(parts))
+    upcoming = [e for e in todays if _class_dt(e, offset, now) > now]
+    rows = [{"time": _class_dt(e, offset, now).strftime("%I:%M %p").lstrip("0"), "name": e["name"],
+             "next": bool(upcoming) and e is upcoming[0]} for e in todays]
+    return card("schedule", "%s you have %s." % (label.capitalize(), ", then ".join(parts)), title=title, rows=rows)
 
 
 @action("next_class", "Next scheduled class.")
@@ -262,8 +279,9 @@ def next_class():
         return "You have nothing scheduled."
     dt, e = best
     mins = (dt - now).total_seconds()
-    when = "in " + duration_phrase(mins - mins % 60) if mins < 3 * 3600 else clock_phrase(dt, now)
-    return "%s is %s." % (e["name"].capitalize(), when)
+    when = "in " + duration_phrase(mins - mins % 60) if mins < 3 * 3600 else "at " + clock_phrase(dt, now)
+    return card("schedule", "%s is %s." % (e["name"].capitalize(), when), title="Next class",
+                rows=[{"time": dt.strftime("%I:%M %p").lstrip("0"), "name": "%s · %s" % (e["name"], when), "next": True}])
 
 
 @action("schedule_add", "Add a weekly class or event.", "name: str, days: [weekday], time: str, url?: str")
@@ -347,24 +365,28 @@ class Scheduler:
         if item.get("repeat_minutes"):
             self._reschedule(item)
         if item["kind"] == "timer":
+            title = (item["label"].capitalize() + " timer") if item["label"] else "Timer done"
             msg = "Your %s timer is done." % item["label"] if item["label"] else "Time's up."
             sound = "alarm"
         elif item["kind"] == "alarm":
             at = datetime.datetime.fromtimestamp(item["at"])
+            title = "Alarm"
             msg = "It's %s.%s" % (at.strftime("%I:%M %p").lstrip("0"), " " + item["label"].capitalize() + "." if item["label"] else "")
             sound = "alarm"
         else:
+            title = "Reminder"
             msg = "Reminder: %s." % item["message"]
             sound = "soft"
         self.last_fired = (item, time.time())
         play = sound if self.cfg["reminders"].get("alarm_sound", True) else None
-        notify("Gem", msg, sound=play)
+        notify(title, msg, sound=play)
         if item.get("url"):
             webbrowser.open(item["url"])
 
     def _fire_event(self, item):
         self.last_fired = (item, time.time())
-        notify("Gem", item["message"] or "Time for %s." % item["label"], sound="alarm")
+        play = "alarm" if self.cfg["reminders"].get("alarm_sound", True) else None
+        notify(item["label"].capitalize(), item["message"] or "Time for %s." % item["label"], sound=play)
         if item.get("url"):
             webbrowser.open(item["url"])
 

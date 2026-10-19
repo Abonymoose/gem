@@ -1,7 +1,5 @@
 """Shared services. app.py fills these in at startup; skills import them."""
 import logging
-import time
-import winsound
 
 log = logging.getLogger("gem.runtime")
 
@@ -11,6 +9,7 @@ class Services:
     state = None
     voice = None
     lights = None
+    sounds = None
     brain = None
     stt = None
     listener = None
@@ -24,39 +23,23 @@ class Services:
 svc = Services()
 
 
-def say(text, caption_only=False):
+def say(text, caption_only=False, card=None):
     if text and svc.voice:
-        svc.voice.say(text, caption_only=caption_only)
+        svc.voice.say(text, caption_only=caption_only, card=card)
 
 
-def caption(text, you=None, seconds=None):
+def caption(text, you=None, seconds=None, card=None):
     if svc.overlay:
-        svc.overlay.caption(gem=text, you=you, seconds=seconds)
+        svc.overlay.caption(gem=text, you=you, seconds=seconds, card=card)
 
 
 def chime(kind="soft"):
-    """Short sounds. Never played during calls, snooze or gaming."""
-    if svc.state and svc.state.quiet_alerts():
-        return
-    try:
-        if kind == "alarm":
-            for _ in range(3):
-                winsound.Beep(988, 180)
-                winsound.Beep(1319, 220)
-                time.sleep(0.15)
-        elif kind == "soft":
-            winsound.Beep(880, 90)
-        elif kind == "up":
-            winsound.Beep(660, 70)
-            winsound.Beep(990, 90)
-        elif kind == "down":
-            winsound.Beep(990, 70)
-            winsound.Beep(660, 90)
-    except Exception:
-        pass
+    """Alert sounds. Never played during calls, quiet time or gaming."""
+    if svc.sounds:
+        svc.sounds.play({"soft": "alert", "alarm": "alarm", "ack": "ack"}.get(kind, kind))
 
 
-def notify(title, message, speak=True, sound=None, flash=True):
+def notify(title, message, speak=True, sound=None, flash=True, icon="bell"):
     """Alert the user in the least intrusive way the current state allows."""
     log.info("Notify: %s — %s", title, message)
     if svc.tray:
@@ -65,7 +48,8 @@ def notify(title, message, speak=True, sound=None, flash=True):
         svc.lights.flash("alert")
     if sound:
         chime(sound)
+    card = {"kind": "alert", "title": title, "message": message, "icon": icon}
     if speak:
-        say(message)
+        say(message, card=card)
     else:
-        caption(message)
+        caption(message, card=card)

@@ -202,7 +202,14 @@ DEFAULTS = {
     },
 
     "screenshot_dir": "",      # blank = Desktop
-    "overlay": {"enabled": True},
+
+    "appearance": {
+        "edge_glow": True,                    # screen edges glow while you hold Caps Lock
+        "mini_crystal_when_listening": True,  # small crystal at the top while always-listening
+        "card_seconds": 1.0,                  # multiplier for how long answers stay on screen
+    },
+
+    "sounds": {"cues": True},                 # soft tones when listening starts and stops
 }
 
 

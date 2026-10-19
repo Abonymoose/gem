@@ -99,6 +99,12 @@ def _rules():
         secs = parse_duration(m.group(1))
         return Match("snooze", {"minutes": secs / 60.0} if secs else {})
 
+    @rule(r"\b(?:shut up|be quiet|stop talking|keep quiet|not talking to you)\b", safe=False)
+    def _(m, t):
+        # "Yadju, shut up, I'm not talking to you": quiet anywhere in the sentence (needs addressing).
+        secs = parse_duration(t[m.end():])
+        return Match("snooze", {"minutes": secs / 60.0} if secs else {}, False)
+
     @rule(r"^(?:i'm back|im back|speak up|you can talk(?: again)?|talk again|start talking|wake up|unsnooze|"
           r"unmute yourself|come back|you can speak(?: again)?)$")
     def _(m, t):
@@ -608,6 +614,12 @@ def _rules():
     @rule(r"^(?:open )?(?:your|gem's|gem) settings$|^open your settings$", safe=False)
     def _(m, t):
         return Match("open_gem_settings", {}, False)
+
+    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history)$",
+          safe=False)
+    def _(m, t):
+        page = "history" if "history" in m.group(1) else "home"
+        return Match("open_dashboard", {"page": page}, False)
 
     # Web
     @rule(r"^(?:search wikipedia for|wikipedia)\s+(.+)$")

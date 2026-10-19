@@ -3,6 +3,23 @@
 A fast, quiet, genuinely useful voice assistant for Windows. Hold Caps Lock, say what you want, let go.
 Gem runs common commands instantly on your PC and uses Groq's free AI models for everything else.
 
+## How it looks
+
+Gem lives at the **top centre of your screen** and only appears when she's needed:
+
+- **The crystal**: Gem's faceted eye. It assembles when Gem starts, opens up and follows your voice while you
+  talk, swirls while thinking, sends out rings while speaking, sleeps during quiet time and glitches in Ruhig.
+- **Answer cards**: frosted cards under the crystal: weather with icons, timers with a live countdown ring,
+  to-do checklists, your schedule, PC gauges, now playing, volume, reminders, the morning briefing, screenshots.
+- **Screen-edge glow**: the edges of the screen glow while you hold Caps Lock to talk.
+- **Sound cues**: soft tones when listening starts and stops, gentle bells for reminders and alarms.
+  All silent during calls, quiet time and gaming.
+- **The Gem window**: left-click the tray icon, or say "open your settings" / "open dashboard". It has Home
+  (status, quick switches, up next, recent), Reminders, Classes, To-do, Notes, Memory, History and Settings,
+  so you never have to edit JSON.
+
+In always-listening mode a small crystal stays at the top as a reminder that the mic is live.
+
 ## Talking to Gem
 
 Caps Lock is Gem's key. It never turns your typing into capitals (Shift + Caps Lock still toggles real caps).
@@ -45,6 +62,7 @@ Everything returns to normal when the call ends.
 ### Typing instead of talking
 
 Press **Ctrl + Alt + Space** (or click the crystal) to open a command bar and type a request. Handy in calls.
+Up and Down recall what you typed before. Right-click the crystal for a quick menu.
 
 ## What Gem can do
 
@@ -92,19 +110,20 @@ No weather key is needed any more (Gem uses Open-Meteo).
 
 ## Settings and data
 
-Everything lives in `C:\Users\<you>\.gem\` (tray icon → Data folder):
+Change settings in the Gem window's **Settings** page: voice (with a Test button), look and sound, microphone,
+keys, productivity, AI models, panic, app names, websites and Start with Windows. Items marked ↻ apply after
+**Restart Gem** (same page).
+
+Everything lives in `C:\Users\<you>\.gem\` (tray icon → More → Data folder):
 
 | File | What |
 |---|---|
-| `settings.json` | All options: voice, AI models, hotkeys, app aliases, websites, panic behaviour, control words. Restart Gem after editing. |
+| `settings.json` | All options, including a few not in the window (control words, call-detection ignore list) |
 | `reminders.json` | Timers, alarms, reminders and the weekly class schedule (your old `gem_alarms.json` is imported on first run) |
-| `todo.json`, `notes.md`, `memory.json` | To-do list, notes, remembered facts |
+| `todo.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, notes, remembered facts, conversation history |
 | `gem.log` | Log, useful if something doesn't work |
 
 Apps are found automatically from the Start Menu, so app updates (like Discord's) no longer break "open".
-Add aliases or exact paths under `"apps"` in settings.json.
-
-The tray menu has mode, quiet time, voice on/off, gaming mode, overlay visibility and **Start with Windows**.
 
 ### AI models
 

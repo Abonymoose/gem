@@ -1,6 +1,8 @@
 """The request pipeline: speech -> text -> (router | AI) -> actions -> reply."""
+import json
 import logging
 import math
+import os
 import queue
 import re
 import threading
@@ -10,6 +12,8 @@ from collections import deque
 from . import actions, router
 from .audio import Utterance
 from .brain import BrainUnavailable
+from .cards import card_of
+from .config import DATA_DIR
 from .runtime import caption, say, svc
 from .skills import control, text as text_skill
 from .state import ALWAYS_LISTENING
@@ -24,6 +28,20 @@ FILLER = {"yeah", "yes", "no", "okay", "ok", "lol", "bro", "what", "huh", "right
           "yep", "nope", "hello", "hi", "hey", "thanks", "alright", "oh", "damn", "bruh", "um", "uh", "like",
           "so", "and", "the", "i", "it", "is", "that", "this", "you", "a"}
 
+HISTORY_FILE = os.path.join(DATA_DIR, "history.jsonl")
+HISTORY_MAX = 2000
+
+
+def _trim_history():
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > HISTORY_MAX:
+            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines[-HISTORY_MAX // 2:])
+    except OSError:
+        pass
+
 
 class Assistant:
     def __init__(self, on_quit):
@@ -33,6 +51,7 @@ class Assistant:
         self._pending = None            # (callback, expires_at)
 
     def start(self):
+        _trim_history()
         threading.Thread(target=self._worker, name="assistant", daemon=True).start()
 
     def submit(self, utterance):
@@ -47,7 +66,7 @@ class Assistant:
     def confirm(self, question, callback, timeout=20):
         """Ask a yes/no question; callback runs (and its result is spoken) on yes."""
         self._pending = (callback, time.time() + timeout)
-        say(question)
+        say(question, card={"kind": "confirm"})
         svc.state.update(last_reply_at=time.time())
 
     def quit(self):
@@ -196,6 +215,7 @@ class Assistant:
         for a in plan["actions"]:
             names.append(a["name"])
             results.append((a["name"], actions.run(a["name"], a["args"])))
+        cards = [card_of(r) for _, r in results if card_of(r)]
         reply = plan["reply"]
         if plan["continue"]:
             try:
@@ -204,20 +224,30 @@ class Assistant:
                 for a in final.get("actions", []):
                     names.append(a["name"])
                     results.append((a["name"], actions.run(a["name"], a["args"])))
+                cards = [card_of(r) for _, r in results if card_of(r)] or cards
                 reply = final.get("reply", "")
             except BrainUnavailable as e:
                 reply = str(e)
         spoken = " ".join([r for _, r in results if r] + ([reply] if reply else []))
-        self._respond(spoken, text, item.source, names)
+        if not spoken and not names and explicit:
+            spoken = "Sorry, I didn't get that."        # never leave a push-to-talk request hanging
+        self._respond(spoken, text, item.source, names, card=cards[0] if cards else None)
 
     @staticmethod
     def _probably_chatter(norm):
         words = norm.split()
         return len(words) < 3 or all(w in FILLER for w in words)
 
-    def _respond(self, spoken, text, source, action_names):
+    def _respond(self, spoken, text, source, action_names, card=None):
+        card = card or card_of(spoken)
         if spoken:
-            say(spoken)
+            say(spoken, card=card)
         if action_names != ["snooze"]:
             svc.state.update(last_reply_at=time.time())
-        svc.brain.remember_exchange(text, source, spoken or "", action_names)
+        svc.brain.remember_exchange(text, source, str(spoken or ""), action_names)
+        try:
+            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"t": time.time(), "source": source, "you": text, "gem": str(spoken or ""),
+                                    "actions": action_names}) + "\n")
+        except OSError:
+            pass

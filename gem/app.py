@@ -1,8 +1,9 @@
-"""Startup: build every service, wire them together, run the overlay."""
+"""Startup: build every service, wire them together, run the UI."""
 import ctypes
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -13,6 +14,9 @@ from .runtime import caption, svc
 from .state import ALWAYS_LISTENING, MODE_NAMES, PUSH_TO_TALK, State
 
 log = logging.getLogger("gem")
+
+MUTEX_NAME = "Local\\GemVoiceAssistant"
+RESTART_FLAG = "--restart"
 
 
 def _setup_logging():
@@ -31,11 +35,32 @@ def _setup_logging():
 
 
 def _single_instance():
+    """Own a named mutex for our lifetime. After a restart, wait for the old copy to exit."""
     kernel32 = ctypes.windll.kernel32
-    handle = kernel32.CreateMutexW(None, False, "Local\\GemVoiceAssistant")
-    if kernel32.GetLastError() == 183:      # ERROR_ALREADY_EXISTS
-        return None
-    return handle
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel32.CreateMutexW(None, True, MUTEX_NAME)
+    if kernel32.GetLastError() != 183:          # ERROR_ALREADY_EXISTS
+        return handle
+    if RESTART_FLAG in sys.argv:
+        r = kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 15000)
+        if r in (0, 0x80):                      # signalled or abandoned: the old Gem is gone
+            return handle
+    return None
+
+
+def restart():
+    """Start a fresh copy of Gem, then quit this one."""
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, RESTART_FLAG]
+    else:
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gem2.py"))
+        exe = sys.executable
+        pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        cmd = [pyw if os.path.exists(pyw) else exe, script, RESTART_FLAG]
+    log.info("Restarting: %s", cmd)
+    subprocess.Popen(cmd, cwd=os.path.dirname(cmd[1]) if len(cmd) > 2 else None,
+                     creationflags=subprocess.DETACHED_PROCESS)
+    _quit()
 
 
 def _quit():
@@ -58,18 +83,27 @@ def _on_press():
     svc.voice.stop()
     st.update(key_held=True)
     talk = st.effective_mode == PUSH_TO_TALK
+    if talk:
+        svc.sounds.play("listen_start")     # right away, before you start speaking
     svc.listener.begin_hold(talk=talk)
     svc.lights.show("talk" if talk else "mute")
+    if talk:
+        svc.overlay.dismiss()
 
 
 def _on_release(was_tap):
-    svc.state.update(key_held=False)
+    st = svc.state
+    talk = st.effective_mode == PUSH_TO_TALK
+    st.update(key_held=False)
     svc.listener.end_hold(discard=was_tap)
     svc.lights.show("normal")
+    if talk and not was_tap:
+        # After the recording tail, so the tone isn't captured.
+        threading.Timer(0.32, svc.sounds.play, args=("listen_end",)).start()
 
 
 def _on_tap():
-    pass        # pressing already stopped any speech
+    svc.overlay.dismiss()      # pressing already stopped any speech
 
 
 def _on_triple_tap():
@@ -101,6 +135,10 @@ def main():
     st.speak_in_gaming = cfg["voice"].get("speak_in_gaming", False)
     svc.state = st
 
+    from .ui.overlay import Overlay
+    overlay = Overlay(cfg)              # creates the Qt application; must come first
+    svc.overlay = overlay
+
     from . import skills  # noqa: F401  (registers actions)
     from .assistant import Assistant
     from .audio import Listener
@@ -111,14 +149,14 @@ def main():
     from .skills.apps import index
     from .skills.productivity import memory
     from .skills.timers import Scheduler
+    from .sounds import Sounds
     from .stt import Transcriber
     from .tts import Voice
-    from .ui.overlay import GemOverlay
     from .ui.tray import Tray
 
-    overlay = GemOverlay(show_crystal=cfg["overlay"].get("enabled", True))
-    svc.overlay = overlay
-    svc.voice = Voice(st, cfg["voice"], on_caption=lambda text, secs: overlay.caption(gem=text, seconds=secs))
+    svc.sounds = Sounds(cfg.setdefault("sounds", {"cues": True}), st)
+    svc.voice = Voice(st, cfg["voice"],
+                      on_caption=lambda text, secs, card=None: overlay.caption(gem=text, seconds=secs, card=card))
     svc.lights = KeyboardLights(enabled=cfg["lights"].get("enabled", True), animate=cfg["lights"].get("animate", True))
     svc.brain = Brain(cfg["ai"], st, cfg.get("user_name"), memory)
     svc.stt = Transcriber(cfg["stt"])
@@ -145,7 +183,7 @@ def main():
     if not svc.brain.available():
         log.warning("GROQ_API_KEY not set: AI answers and Whisper are off")
     hint = "Hold Caps Lock to talk." if st.mode == PUSH_TO_TALK else "I'm listening. Hold Caps Lock to mute me."
-    overlay.root.after(3200, lambda: overlay.caption(gem="Gem is ready. " + hint, seconds=4))
+    threading.Timer(2.8, lambda: caption("Gem is ready. " + hint, seconds=4)).start()
     log.info("Ready: %s", st.describe())
 
     try:

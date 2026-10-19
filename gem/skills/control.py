@@ -1,6 +1,5 @@
 """Controlling Gem herself: quiet time, modes, voice, gaming and help."""
 import math
-import os
 import time
 
 from ..actions import action
@@ -9,24 +8,30 @@ from ..runtime import caption, svc
 from ..state import ALWAYS_LISTENING, MODE_NAMES, PUSH_TO_TALK
 
 
+def _feedback(flash="ack"):
+    """Lights, a soft tone and a glimpse of the crystal for silent state changes."""
+    if svc.lights:
+        svc.lights.flash(flash)
+    if svc.overlay:
+        svc.overlay.flash(2.6)
+
+
 @action("snooze", "Go quiet for a while (default 10 min).", "minutes?: number")
 def snooze(minutes=None):
     minutes = float(minutes or svc.config.get("snooze_minutes", 10))
     svc.voice.stop()
     svc.state.update(snoozed_until=time.time() + minutes * 60)
-    if svc.lights:
-        svc.lights.flash("ack")
+    _feedback()
     until = time.strftime("%I:%M %p", time.localtime(svc.state.snoozed_until)).lstrip("0")
-    caption("Quiet until %s." % until)
+    caption("Quiet until %s." % until, seconds=3)
     return None
 
 
 def ruhig():
     svc.voice.stop()
     svc.state.update(snoozed_until=math.inf)
-    if svc.lights:
-        svc.lights.flash("ack")
-    caption("Ruhig. Say Weiter, or hold Caps Lock and say it, to bring me back.")
+    _feedback()
+    caption("Ruhig. Hold Caps Lock and say Weiter to bring me back.", seconds=4)
 
 
 @action("resume", "End quiet time.")
@@ -46,8 +51,9 @@ def set_mode(mode="toggle"):
     st.update(mode=mode)
     with runtime as data:
         data["mode"] = mode
-    if svc.lights:
-        svc.lights.flash(mode)
+    _feedback(mode)
+    if svc.sounds:
+        svc.sounds.play("ack")
     return MODE_NAMES[mode] + "."
 
 
@@ -65,8 +71,9 @@ def voice_replies(on=True):
 @action("gaming_mode", "Gaming mode on/off (quiet, captions only).", "on: bool")
 def gaming_mode(on=True):
     svc.state.update(gaming=bool(on))
+    _feedback()
     if on:
-        caption("Gaming mode on.")
+        caption("Gaming mode on.", seconds=3)
         return None
     return "Gaming mode off."
 
@@ -94,11 +101,16 @@ def clear_conversation():
     return "Conversation cleared."
 
 
-@action("open_gem_settings", "Open Gem's settings file.", ai=False)
+@action("open_dashboard", "Open Gem's window.", "page?: home|reminders|classes|todo|notes|memory|history|settings")
+def open_dashboard(page="home"):
+    if svc.overlay:
+        svc.overlay.open_dashboard(page or "home")
+    return None
+
+
+@action("open_gem_settings", "Open Gem's settings.", ai=False)
 def open_gem_settings():
-    from ..config import SETTINGS_FILE
-    os.startfile(SETTINGS_FILE)
-    return "Opening my settings. Restart me after you change them."
+    return open_dashboard("settings")
 
 
 @action("help", "Explain what Gem can do and how to talk to her.", ai=False)

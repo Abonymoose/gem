@@ -10,6 +10,7 @@ import psutil
 import requests
 
 from ..actions import ActionError, action
+from ..cards import card
 from ..parse import duration_phrase
 from ..runtime import svc
 from ..winapi import SW_MAXIMIZE, SW_MINIMIZE, foreground_window, known_folder, lock_workstation, press, \
@@ -23,9 +24,8 @@ log = logging.getLogger("gem.system")
 @action("clock", "Current time or date.", "what: time|date", ai=False)
 def clock(what="time"):
     now = datetime.datetime.now()
-    if what == "date":
-        return "It's %s." % now.strftime("%A, %B %d, %Y").replace(" 0", " ")
-    return "It's %s." % now.strftime("%I:%M %p").lstrip("0")
+    t, d = now.strftime("%I:%M %p").lstrip("0"), now.strftime("%A, %B %d, %Y").replace(" 0", " ")
+    return card("clock", "It's %s." % (d if what == "date" else t), time=t, date=d)
 
 
 # ── Volume ───────────────────────────────────────────────────────────────────
@@ -53,15 +53,17 @@ def volume(level=None, change=None, mute=None, app=None):
     ep = _endpoint()
     if mute is not None:
         ep.SetMute(1 if mute else 0, None)
-        return "Muted." if mute else "Unmuted."
+        return card("volume", "Muted." if mute else "Unmuted.", level=_master(), muted=bool(mute))
     if level is None and change is None:
-        return "Volume is at %d percent%s." % (_master(), ", muted" if ep.GetMute() else "")
+        muted = bool(ep.GetMute())
+        return card("volume", "Volume is at %d percent%s." % (_master(), ", muted" if muted else ""),
+                    level=_master(), muted=muted)
     new = int(level) if level is not None else _master() + int(change)
     new = max(0, min(100, new))
     ep.SetMasterVolumeLevelScalar(new / 100.0, None)
     if ep.GetMute() and new > 0:
         ep.SetMute(0, None)
-    return "Volume %d." % new
+    return card("volume", "Volume %d." % new, level=new, muted=False)
 
 
 def _app_volume(app, level, change, mute):
@@ -76,10 +78,11 @@ def _app_volume(app, level, change, mute):
             cur = v.GetMasterVolume() * 100
             new = int(level) if level is not None else cur + int(change)
             v.SetMasterVolume(max(0, min(100, new)) / 100.0, None)
-    if mute is not None:
-        return "%s %s." % (app.capitalize(), "muted" if mute else "unmuted")
     cur = int(round(sessions[0].SimpleAudioVolume.GetMasterVolume() * 100))
-    return "%s volume %d." % (app.capitalize(), cur)
+    if mute is not None:
+        return card("volume", "%s %s." % (app.capitalize(), "muted" if mute else "unmuted"), level=cur,
+                    muted=bool(mute), app=app)
+    return card("volume", "%s volume %d." % (app.capitalize(), cur), level=cur, muted=False, app=app)
 
 
 # ── Media ────────────────────────────────────────────────────────────────────
@@ -102,7 +105,10 @@ def now_playing():
         if proc == "spotify.exe":
             if title.lower().startswith("spotify"):
                 return "Spotify is paused."
-            return "Playing %s." % title.replace(" - ", " by ", 1) if " - " in title else title
+            if " - " in title:
+                artist, song = title.split(" - ", 1)
+                return card("music", "Playing %s by %s." % (song, artist), title=song, artist=artist, playing=True)
+            return card("music", title, title=title, artist="Spotify", playing=True)
     return "Spotify isn't playing anything."
 
 
@@ -176,11 +182,19 @@ def _do_power(command):
 @action("system_info", "PC status.", "what: overview|cpu|ram|disk|battery|uptime|top_processes|ip|network")
 def system_info(what="overview"):
     gb = 1024 ** 3
-    if what == "cpu":
-        return "CPU is at %d percent." % psutil.cpu_percent(interval=0.6)
-    if what == "ram":
+    if what in ("cpu", "ram", "overview"):
+        cpu = psutil.cpu_percent(interval=0.6)
         m = psutil.virtual_memory()
-        return "Using %.1f of %.0f gigabytes of RAM, %d percent." % (m.used / gb, m.total / gb, m.percent)
+        c = psutil.disk_usage("C:\\")
+        b = psutil.sensors_battery()
+        stats = dict(cpu=cpu, ram=m.percent, disk=c.percent, battery=b.percent if b else None, highlight=what)
+        if what == "cpu":
+            return card("system", "CPU is at %d percent." % cpu, **stats)
+        if what == "ram":
+            return card("system", "Using %.1f of %.0f gigabytes of RAM, %d percent." % (m.used / gb, m.total / gb,
+                                                                                    m.percent), **stats)
+        return card("system", "CPU %d percent, RAM %d percent used, %.0f gigabytes free on C." % (
+            cpu, m.percent, c.free / gb), **stats)
     if what == "disk":
         parts = []
         for p in psutil.disk_partitions():
@@ -225,10 +239,7 @@ def system_info(what="overview"):
         return "Your local IP is %s and your public IP is %s." % (local, public)
     if what == "network":
         return ping()
-    cpu = psutil.cpu_percent(interval=0.6)
-    m = psutil.virtual_memory()
-    c = psutil.disk_usage("C:\\")
-    return "CPU %d percent, RAM %d percent used, %.0f gigabytes free on C." % (cpu, m.percent, c.free / gb)
+    return system_info("overview")
 
 
 @action("ping", "Test the internet connection speed.", ai=False)
@@ -256,6 +267,9 @@ def screenshot(region="screen"):
     from io import BytesIO
     import win32clipboard
     from PIL import ImageGrab
+    if svc.overlay:
+        svc.overlay.suppress(1.0)            # keep Gem out of the picture
+        time.sleep(0.3)
     if region == "window":
         img = ImageGrab.grab(bbox=window_rect_physical(foreground_window()), all_screens=True)
     else:
@@ -274,7 +288,9 @@ def screenshot(region="screen"):
         win32clipboard.CloseClipboard()
     if svc.lights:
         svc.lights.flash("ack")
-    return "Screenshot saved and copied."
+    if svc.sounds:
+        svc.sounds.play("ack")
+    return card("image", "Screenshot saved and copied.", path=path)
 
 
 # ── Display ──────────────────────────────────────────────────────────────────

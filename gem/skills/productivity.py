@@ -6,6 +6,7 @@ import os
 import time
 
 from ..actions import ActionError, action
+from ..cards import card
 from ..config import NOTES_FILE, JsonStore
 from ..runtime import svc
 
@@ -19,6 +20,14 @@ memory = JsonStore("memory.json", {"facts": []})
 
 def _open_items():
     return [i for i in todos.data["items"] if not i.get("done")]
+
+
+def _todo_card(text, just_done=None):
+    """Open items plus whatever was just ticked off, for the checklist card."""
+    rows = [{"text": i["text"], "done": False} for i in _open_items()]
+    if just_done:
+        rows.insert(0, {"text": just_done, "done": True})
+    return card("todo", text, items=rows)
 
 
 def _best(text, items):
@@ -42,17 +51,18 @@ def todo_add(items=None, item=None):
     with todos as data:
         for text in items:
             data["items"].append({"text": text, "done": False, "created": time.time()})
-    return "Added %s." % " and ".join(items) if len(items) <= 2 else "Added %d items." % len(items)
+    return _todo_card("Added %s." % " and ".join(items) if len(items) <= 2 else "Added %d items." % len(items))
 
 
 @action("todo_list", "Read the to-do list.")
 def todo_list():
     items = _open_items()
     if not items:
-        return "Your to-do list is empty."
+        return _todo_card("Your to-do list is empty.")
     names = [i["text"] for i in items[:8]]
     more = ", and %d more" % (len(items) - 8) if len(items) > 8 else ""
-    return "You have %d thing%s to do: %s%s." % (len(items), "" if len(items) == 1 else "s", ", ".join(names), more)
+    return _todo_card("You have %d thing%s to do: %s%s." % (len(items), "" if len(items) == 1 else "s",
+                                                           ", ".join(names), more))
 
 
 @action("todo_done", "Mark a to-do done.", "item: str")
@@ -64,7 +74,8 @@ def todo_done(item=""):
         hit["done"] = True
         hit["done_at"] = time.time()
     left = len(_open_items())
-    return "Done: %s. %s" % (hit["text"], "That's everything." if not left else "%d left." % left)
+    return _todo_card("Done: %s. %s" % (hit["text"], "That's everything." if not left else "%d left." % left),
+                      just_done=hit["text"])
 
 
 @action("todo_remove", "Delete a to-do, or clear finished ones.", "item?: str, clear_done?: bool")
@@ -119,7 +130,9 @@ def notes_open():
 def focus_start(minutes=None):
     minutes = float(minutes or svc.config["focus"].get("work_minutes", 25))
     svc.state.update(focus_until=time.time() + minutes * 60)
-    return "Focus session started for %g minutes." % minutes
+    return card("focus", "Focus session started for %g minute%s." % (minutes, "" if minutes == 1 else "s"),
+                ends_at=svc.state.focus_until,
+                total=minutes * 60, phase="focus")
 
 
 @action("focus_stop", "End the focus session.")
@@ -136,7 +149,9 @@ def focus_status():
         return "No focus session is running."
     from ..parse import duration_phrase
     left = svc.state.focus_until - time.time()
-    return "%s left in this session." % duration_phrase(left - left % 60 or left).capitalize()
+    total = float(svc.config["focus"].get("work_minutes", 25)) * 60
+    return card("focus", "%s left in this session." % duration_phrase(left - left % 60 or left).capitalize(),
+                ends_at=svc.state.focus_until, total=max(total, left), phase="focus")
 
 
 # ── Briefing ─────────────────────────────────────────────────────────────────
@@ -145,24 +160,41 @@ def focus_status():
 def briefing():
     from . import timers, web
     now = datetime.datetime.now()
-    part = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
+    part = "evening" if now.hour < 5 else "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
     name = svc.config.get("user_name") or ""
-    lines = ["Good %s%s. It's %s, %s." % (part, ", " + name if name else "", now.strftime("%A, %B %d").replace(" 0", " "),
-                                          now.strftime("%I:%M %p").lstrip("0"))]
+    greeting = "Good %s%s" % (part, ", " + name if name else "")
+    lines = ["%s. It's %s, %s." % (greeting, now.strftime("%A, %B %d").replace(" 0", " "),
+                                   now.strftime("%I:%M %p").lstrip("0"))]
+    rows = []
     if svc.config.get("home_city"):
         try:
-            lines.append(web.weather())
+            w = web.weather()
+            lines.append(w)
+            wc = getattr(w, "card", None) or {}
+            if wc.get("kind") == "weather":
+                rows.append({"icon": "weather", "code": wc.get("code", 1),
+                             "text": "%d° and %s · high %d°, %d%% rain" % (
+                                 wc.get("temp", 0), wc.get("desc", ""), wc.get("high", 0), wc.get("rain", 0))})
         except Exception as e:
             log.warning("Briefing weather failed: %s", e)
-    lines.append(timers.schedule_list("today"))
+    sched = timers.schedule_list("today")
+    lines.append(sched)
+    for r in (getattr(sched, "card", None) or {}).get("rows", []):
+        rows.append({"icon": "class", "text": "%s  %s" % (r["time"], r["name"].capitalize())})
     today_items = [i for i in timers._items() if datetime.datetime.fromtimestamp(i["at"]).date() == now.date()]
     if today_items:
         lines.append("You also have " + ", ".join(timers._describe(i, now) for i in today_items[:3]) + ".")
+        for i in today_items[:3]:
+            rows.append({"icon": "bell", "text": timers._describe(i, now).capitalize()})
     open_todos = _open_items()
     if open_todos:
         lines.append("%d thing%s on your to-do list, starting with %s." % (
             len(open_todos), "" if len(open_todos) == 1 else "s", open_todos[0]["text"]))
-    return " ".join(lines)
+        rows.append({"icon": "todo", "text": "%d to-do%s · %s" % (len(open_todos), "" if len(open_todos) == 1 else "s",
+                                                                 ", ".join(i["text"] for i in open_todos[:3]))})
+    if not rows:
+        rows.append({"icon": "todo", "text": "Nothing scheduled. A clear day."})
+    return card("briefing", " ".join(lines), greeting=greeting + ".", rows=rows)
 
 
 # ── Memory ───────────────────────────────────────────────────────────────────

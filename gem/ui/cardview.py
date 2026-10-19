@@ -1,0 +1,654 @@
+"""The frosted answer card under the crystal.
+
+Every kind of card has a height function and a paint function. Live pieces
+(timer rings, typing dots, equalizer bars) animate because the overlay
+repaints the card every frame while it's visible.
+"""
+import datetime
+import math
+import os
+import time
+
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetrics, QImage, QLinearGradient, QPainter,
+                           QPainterPath, QPen, QPolygonF, QRadialGradient)
+from PySide6.QtWidgets import QWidget
+
+from . import theme as T
+
+WIDTH = 460
+PAD = 20
+MARGIN = 24         # room for the shadow
+RADIUS = 22
+
+F_LABEL = T.font(11, QFont.DemiBold)
+F_LABEL.setLetterSpacing(QFont.AbsoluteSpacing, 1.3)
+F_YOU = T.font(13, italic=True)
+F_BODY = T.font(15)
+F_SMALL = T.font(13)
+F_ROW = T.font(14)
+F_TITLE = T.font(17, QFont.DemiBold)
+F_BIG = T.font(40, QFont.Light)
+F_HUGE = T.font(36, QFont.Normal)
+F_TIME = T.font(28, QFont.DemiBold)
+F_RING = T.font(15, QFont.DemiBold)
+
+
+def _wrap_height(font, text, width, max_lines=None):
+    fm = QFontMetrics(font)
+    h = fm.boundingRect(QRect(0, 0, int(width), 100000), Qt.TextWordWrap, text).height()
+    if max_lines:
+        h = min(h, fm.lineSpacing() * max_lines)
+    return h
+
+
+def _clock(ts):
+    return datetime.datetime.fromtimestamp(ts).strftime("%I:%M %p").lstrip("0")
+
+
+def _countdown(sec):
+    sec = max(0, int(math.ceil(sec)))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
+
+
+# ── Icons ────────────────────────────────────────────────────────────────────
+
+def _cloud_path(x, y, s):
+    path = QPainterPath()
+    path.setFillRule(Qt.WindingFill)      # overlapping puffs merge instead of cutting holes
+    path.addEllipse(QRectF(x + s * 0.05, y + s * 0.38, s * 0.42, s * 0.42))
+    path.addEllipse(QRectF(x + s * 0.22, y + s * 0.18, s * 0.5, s * 0.5))
+    path.addEllipse(QRectF(x + s * 0.5, y + s * 0.36, s * 0.42, s * 0.42))
+    path.addRoundedRect(QRectF(x + s * 0.12, y + s * 0.55, s * 0.72, s * 0.25), s * 0.12, s * 0.12)
+    return path.simplified()
+
+
+def draw_weather_icon(p, x, y, s, code, is_day=True, t=0.0):
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    sunny = code in (0, 1)
+    cloudy = code in (2, 3, 45, 48) or code >= 51
+    if code in (0, 1, 2):
+        cx, cy = (x + s * 0.5, y + s * 0.45) if code != 2 else (x + s * 0.36, y + s * 0.34)
+        r = s * (0.24 if code != 2 else 0.19)
+        if is_day:
+            p.setPen(QPen(QColor(251, 191, 36, 220), s * 0.045, Qt.SolidLine, Qt.RoundCap))
+            for k in range(8):
+                a = math.radians(k * 45 + t * 20)
+                p.drawLine(QPointF(cx + math.cos(a) * r * 1.35, cy + math.sin(a) * r * 1.35),
+                           QPointF(cx + math.cos(a) * r * 1.7, cy + math.sin(a) * r * 1.7))
+            g = QRadialGradient(QPointF(cx - r * 0.3, cy - r * 0.3), r * 1.4)
+            g.setColorAt(0, QColor(254, 240, 138))
+            g.setColorAt(1, QColor(245, 158, 11))
+            p.setPen(Qt.NoPen)
+            p.setBrush(g)
+            p.drawEllipse(QPointF(cx, cy), r, r)
+        else:
+            moon = QPainterPath()
+            moon.addEllipse(QPointF(cx, cy), r * 1.1, r * 1.1)
+            cut = QPainterPath()
+            cut.addEllipse(QPointF(cx + r * 0.55, cy - r * 0.35), r * 0.95, r * 0.95)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(226, 232, 240))
+            p.drawPath(moon.subtracted(cut))
+    if cloudy or code == 2:
+        cs = s * (0.9 if code != 2 else 0.78)
+        cxo = x + (s - cs) / 2 + (s * 0.08 if code == 2 else 0)
+        cyo = y + (s - cs) / 2 - s * 0.06 + (s * 0.08 if code == 2 else 0)
+        g = QLinearGradient(QPointF(cxo, cyo), QPointF(cxo, cyo + cs))
+        dark = code >= 61 or code in (3, 95, 96, 99)
+        g.setColorAt(0, QColor(241, 245, 249) if not dark else QColor(203, 213, 225))
+        g.setColorAt(1, QColor(148, 163, 184) if not dark else QColor(100, 116, 139))
+        p.setPen(Qt.NoPen)
+        p.setBrush(g)
+        p.drawPath(_cloud_path(cxo, cyo, cs))
+        base = cyo + cs * 0.82
+        if 51 <= code <= 67 or 80 <= code <= 82:
+            p.setPen(QPen(QColor(96, 165, 250), s * 0.045, Qt.SolidLine, Qt.RoundCap))
+            for k in range(3):
+                ox = cxo + cs * (0.3 + 0.2 * k)
+                off = ((t * 1.6 + k * 0.3) % 1.0) * s * 0.08
+                p.drawLine(QPointF(ox, base + off), QPointF(ox - s * 0.05, base + s * 0.12 + off))
+        elif 71 <= code <= 77 or code in (85, 86):
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255))
+            for k in range(3):
+                p.drawEllipse(QPointF(cxo + cs * (0.3 + 0.2 * k), base + s * 0.08 + (k % 2) * s * 0.05), s * 0.035, s * 0.035)
+        elif code >= 95:
+            bolt = QPolygonF([QPointF(cxo + cs * 0.52, base - s * 0.02), QPointF(cxo + cs * 0.4, base + s * 0.12),
+                              QPointF(cxo + cs * 0.5, base + s * 0.12), QPointF(cxo + cs * 0.42, base + s * 0.24),
+                              QPointF(cxo + cs * 0.62, base + s * 0.06), QPointF(cxo + cs * 0.52, base + s * 0.06)])
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(250, 204, 21))
+            p.drawPolygon(bolt)
+        elif code in (45, 48):
+            p.setPen(QPen(QColor(203, 213, 225, 200), s * 0.04, Qt.SolidLine, Qt.RoundCap))
+            for k in range(2):
+                yy = base + s * (0.06 + 0.08 * k)
+                p.drawLine(QPointF(cxo + cs * 0.15, yy), QPointF(cxo + cs * 0.85, yy))
+    p.restore()
+
+
+def draw_bell(p, cx, cy, s, color):
+    path = QPainterPath()
+    path.moveTo(cx - s * 0.42, cy + s * 0.25)
+    path.cubicTo(cx - s * 0.32, cy + s * 0.1, cx - s * 0.36, cy - s * 0.45, cx, cy - s * 0.45)
+    path.cubicTo(cx + s * 0.36, cy - s * 0.45, cx + s * 0.32, cy + s * 0.1, cx + s * 0.42, cy + s * 0.25)
+    path.closeSubpath()
+    p.setPen(Qt.NoPen)
+    p.setBrush(color)
+    p.drawPath(path)
+    p.drawEllipse(QPointF(cx, cy + s * 0.36), s * 0.1, s * 0.1)
+    p.drawEllipse(QPointF(cx, cy - s * 0.5), s * 0.06, s * 0.06)
+
+
+def draw_speaker(p, cx, cy, s, color, muted=False):
+    poly = QPolygonF([QPointF(cx - s * 0.45, cy - s * 0.15), QPointF(cx - s * 0.25, cy - s * 0.15),
+                      QPointF(cx, cy - s * 0.4), QPointF(cx, cy + s * 0.4),
+                      QPointF(cx - s * 0.25, cy + s * 0.15), QPointF(cx - s * 0.45, cy + s * 0.15)])
+    p.setPen(Qt.NoPen)
+    p.setBrush(color)
+    p.drawPolygon(poly)
+    pen = QPen(color, s * 0.08, Qt.SolidLine, Qt.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    if muted:
+        p.drawLine(QPointF(cx + s * 0.15, cy - s * 0.15), QPointF(cx + s * 0.45, cy + s * 0.15))
+        p.drawLine(QPointF(cx + s * 0.45, cy - s * 0.15), QPointF(cx + s * 0.15, cy + s * 0.15))
+    else:
+        for k, r in enumerate((0.22, 0.4)):
+            p.drawArc(QRectF(cx - s * r, cy - s * r, s * r * 2, s * r * 2), -45 * 16, 90 * 16)
+
+
+def draw_check(p, x, y, s, done):
+    rect = QRectF(x, y, s, s)
+    if done:
+        g = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        g.setColorAt(0, QColor(167, 139, 250))
+        g.setColorAt(1, QColor(124, 58, 237))
+        p.setPen(Qt.NoPen)
+        p.setBrush(g)
+        p.drawEllipse(rect)
+        p.setPen(QPen(QColor(255, 255, 255), s * 0.13, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        path = QPainterPath(QPointF(x + s * 0.28, y + s * 0.52))
+        path.lineTo(x + s * 0.44, y + s * 0.68)
+        path.lineTo(x + s * 0.73, y + s * 0.34)
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(path)
+    else:
+        p.setPen(QPen(T.alpha(T.SOFT, 0.6), 1.5))
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(rect.adjusted(0.75, 0.75, -0.75, -0.75))
+
+
+def draw_ring(p, cx, cy, r, progress, width, colors=None, track=None):
+    rect = QRectF(cx - r, cy - r, r * 2, r * 2)
+    p.setBrush(Qt.NoBrush)
+    p.setPen(QPen(track or T.alpha(T.SOFT, 0.14), width, Qt.SolidLine, Qt.RoundCap))
+    p.drawEllipse(rect)
+    if progress <= 0:
+        return
+    g = QConicalGradient(QPointF(cx, cy), 90)
+    stops = colors or [QColor(196, 160, 240), QColor(139, 92, 246), QColor(236, 72, 153)]
+    for i, c in enumerate(stops):
+        g.setColorAt(i / max(1, len(stops) - 1), c)
+    p.setPen(QPen(g, width, Qt.SolidLine, Qt.RoundCap))
+    p.drawArc(rect, 90 * 16, int(-min(1.0, progress) * 360 * 16))
+
+
+# ── Card ─────────────────────────────────────────────────────────────────────
+
+LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "ALARM", "timers": "TIMERS & REMINDERS",
+          "todo": "TO-DO", "music": "NOW PLAYING", "system": "THIS PC", "schedule": "SCHEDULE", "volume": "VOLUME",
+          "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
+          "pending": ""}
+
+
+class CardView(QWidget):
+    def __init__(self):
+        super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool |
+                         Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.you = ""
+        self.text = ""
+        self.card = None
+        self.opacity = 0.0
+        self.slide = 0.0
+        self._image = None
+        self.t = 0.0
+        self.resize(WIDTH + MARGIN * 2, 120)
+
+    # ── Content ──────────────────────────────────────────────────────────────
+
+    def set_content(self, you=None, text=None, card=None):
+        if you is not None:
+            self.you = you
+            if text is None and card is None:
+                self.text, self.card = "", {"kind": "pending"}
+        if text is not None:
+            self.text = text
+        if card is not None or text is not None:
+            self.card = card or {"kind": "text"}
+        if self.card and self.card.get("kind") == "image":
+            path = self.card.get("path")
+            self._image = QImage(path) if path and os.path.exists(path) else None
+        self.resize(WIDTH + MARGIN * 2, int(self._content_height() + PAD * 2 + MARGIN * 2))
+        self.update()
+
+    @property
+    def kind(self):
+        return (self.card or {}).get("kind", "text")
+
+    def _label(self):
+        c = self.card or {}
+        label = LABELS.get(self.kind, "")
+        if self.kind == "weather" and c.get("city"):
+            label += " · " + c["city"].upper()
+        if self.kind == "schedule" and c.get("title"):
+            label += " · " + c["title"].upper()
+        if self.kind == "volume" and c.get("app"):
+            label = c["app"].upper() + " VOLUME"
+        if self.kind == "alarm":
+            label = (c.get("title") or "Alarm").upper()
+        if self.kind == "focus" and c.get("phase") == "break":
+            label = "BREAK"
+        return label
+
+    def _content_height(self):
+        w = WIDTH - PAD * 2
+        h = 0
+        if self.you:
+            h += _wrap_height(F_YOU, "“%s”" % self.you, w, max_lines=2) + 10
+        if self._label():
+            h += QFontMetrics(F_LABEL).height() + 10
+        return h + self._body_height(w)
+
+    def _body_height(self, w):
+        c, k = self.card or {}, self.kind
+        if k == "pending":
+            return 18
+        if k == "text":
+            return _wrap_height(F_BODY, self.text, w) if self.text else 0
+        if k == "weather":
+            return 92
+        if k in ("timer", "focus"):
+            return 76
+        if k == "alarm":
+            return 56
+        if k == "timers":
+            return 32 * min(6, len(c.get("items") or [])) or 24
+        if k == "todo":
+            n = min(7, len(c.get("items") or []))
+            return (30 * n or 24) + (20 if len(c.get("items") or []) > 7 else 0)
+        if k == "music":
+            return 64
+        if k == "system":
+            return 96
+        if k == "schedule":
+            return 32 * max(1, min(6, len(c.get("rows") or [])))
+        if k == "volume":
+            return 36
+        if k == "clock":
+            return 72
+        if k == "briefing":
+            rows = c.get("rows") or []
+            return QFontMetrics(F_TITLE).height() + 10 + sum(_wrap_height(F_ROW, r["text"], w - 34) + 12 for r in rows)
+        if k == "alert":
+            return max(48, QFontMetrics(F_TITLE).height() + 6 + _wrap_height(F_SMALL, c.get("message", ""), w - 64))
+        if k == "image":
+            if self._image is None or self._image.isNull():
+                return 24
+            return min(220, int(w * self._image.height() / max(1, self._image.width()))) + 26
+        if k == "confirm":
+            return _wrap_height(F_BODY, self.text, w) + 40
+        return _wrap_height(F_BODY, self.text, w)
+
+    # ── Painting ─────────────────────────────────────────────────────────────
+
+    def paintEvent(self, _):
+        if self.opacity <= 0.01:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.TextAntialiasing)
+        p.setOpacity(self.opacity)
+        p.translate(0, -self.slide)
+        box = QRectF(MARGIN, MARGIN, WIDTH, self.height() - MARGIN * 2)
+
+        for i in range(10):          # soft shadow
+            r = box.adjusted(-i * 1.6, -i * 1.2 + 4, i * 1.6, i * 2.2 + 4)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, int(16 * (1 - i / 10))))
+            p.drawRoundedRect(r, RADIUS + i, RADIUS + i)
+        g = QLinearGradient(box.topLeft(), box.bottomLeft())
+        g.setColorAt(0, T.CARD_TOP)
+        g.setColorAt(1, T.CARD_BOTTOM)
+        p.setBrush(g)
+        p.setPen(QPen(T.CARD_BORDER, 1))
+        p.drawRoundedRect(box, RADIUS, RADIUS)
+        hl = QLinearGradient(box.topLeft(), QPointF(box.left(), box.top() + 40))
+        hl.setColorAt(0, QColor(255, 255, 255, 18))
+        hl.setColorAt(1, QColor(255, 255, 255, 0))
+        p.setPen(Qt.NoPen)
+        p.setBrush(hl)
+        p.drawRoundedRect(box.adjusted(1, 1, -1, -1), RADIUS - 1, RADIUS - 1)
+
+        x, y, w = box.left() + PAD, box.top() + PAD, WIDTH - PAD * 2
+        if self.you:
+            p.setFont(F_YOU)
+            p.setPen(T.TEXT_FAINT)
+            hy = _wrap_height(F_YOU, "“%s”" % self.you, w, max_lines=2)
+            p.drawText(QRectF(x, y, w, hy), Qt.TextWordWrap, "“%s”" % self.you)
+            y += hy + 10
+        label = self._label()
+        if label:
+            p.setFont(F_LABEL)
+            p.setPen(T.LAVENDER)
+            lh = QFontMetrics(F_LABEL).height()
+            p.drawText(QRectF(x, y, w, lh), Qt.AlignLeft | Qt.AlignVCenter, label)
+            y += lh + 10
+        getattr(self, "_paint_" + self.kind, self._paint_text)(p, x, y, w)
+        p.end()
+
+    def _paint_text(self, p, x, y, w):
+        p.setFont(F_BODY)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y, w, _wrap_height(F_BODY, self.text, w) + 4), Qt.TextWordWrap, self.text)
+
+    def _paint_pending(self, p, x, y, w):
+        p.setPen(Qt.NoPen)
+        for k in range(3):
+            a = 0.35 + 0.65 * max(0.0, math.sin(self.t * 5 - k * 0.7))
+            p.setBrush(T.alpha(T.SOFT, a))
+            p.drawEllipse(QPointF(x + 6 + k * 14, y + 9), 4, 4)
+
+    def _paint_weather(self, p, x, y, w):
+        c = self.card
+        draw_weather_icon(p, x - 4, y, 80, int(c.get("code", 0)), c.get("is_day", True), self.t)
+        tx = x + 92
+        if c.get("when") in ("today", "tomorrow"):
+            p.setFont(F_BIG)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(tx, y - 4, w - 92, 50), Qt.AlignLeft | Qt.AlignVCenter,
+                       "%d° / %d°" % (c.get("high", 0), c.get("low", 0)))
+            sub = "%s · %s" % (c.get("when", "").capitalize(), c.get("desc", "").capitalize())
+            detail = "%d%% chance of rain" % (c.get("rain") or 0)
+        else:
+            p.setFont(F_BIG)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(tx, y - 4, w - 92, 50), Qt.AlignLeft | Qt.AlignVCenter, "%d°" % c.get("temp", 0))
+            sub = c.get("desc", "").capitalize()
+            detail = "Feels like %d° · H %d° L %d° · Rain %d%%" % (
+                c.get("feels", 0), c.get("high", 0), c.get("low", 0), c.get("rain") or 0)
+        p.setFont(F_ROW)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(tx, y + 48, w - 92, 20), Qt.AlignLeft | Qt.AlignVCenter, sub)
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(tx, y + 70, w - 92, 20), Qt.AlignLeft | Qt.AlignVCenter, detail)
+
+    def _paint_timer(self, p, x, y, w):
+        c = self.card
+        left = max(0.0, c.get("ends_at", 0) - time.time())
+        total = max(1.0, float(c.get("total") or 1))
+        draw_ring(p, x + 36, y + 38, 32, left / total, 6)
+        p.setFont(F_RING)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y + 6, 72, 64), Qt.AlignCenter, _countdown(left))
+        title = c.get("label") or ("Focus session" if self.kind == "focus" else "Timer")
+        if self.kind == "focus" and c.get("phase") == "break":
+            title = "Break"
+        p.setFont(F_TITLE)
+        p.drawText(QRectF(x + 92, y + 10, w - 92, 26), Qt.AlignLeft | Qt.AlignVCenter, title.capitalize())
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + 92, y + 38, w - 92, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                   "Done at %s" % _clock(c.get("ends_at", time.time())) if left > 0 else "Done")
+
+    _paint_focus = _paint_timer
+
+    def _paint_alarm(self, p, x, y, w):
+        c = self.card
+        g = QLinearGradient(QPointF(x, y), QPointF(x + 52, y + 52))
+        g.setColorAt(0, QColor(167, 139, 250))
+        g.setColorAt(1, QColor(124, 58, 237))
+        p.setPen(Qt.NoPen)
+        p.setBrush(g)
+        p.drawRoundedRect(QRectF(x, y + 2, 52, 52), 14, 14)
+        draw_bell(p, x + 26, y + 28, 26, QColor(255, 255, 255))
+        p.setFont(F_TIME)
+        p.setPen(T.TEXT)
+        when = c.get("at", time.time())
+        day = datetime.datetime.fromtimestamp(when).date()
+        today = datetime.date.today()
+        p.drawText(QRectF(x + 68, y - 2, w - 68, 34), Qt.AlignLeft | Qt.AlignVCenter, _clock(when))
+        dayname = "Today" if day == today else "Tomorrow" if day == today + datetime.timedelta(days=1) \
+            else datetime.datetime.fromtimestamp(when).strftime("%A")
+        sub = dayname + (" · " + c["subtitle"] if c.get("subtitle") else "")
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + 68, y + 32, w - 68, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(F_SMALL).elidedText(sub, Qt.ElideRight, int(w - 68)))
+
+    def _paint_timers(self, p, x, y, w):
+        items = (self.card.get("items") or [])[:6]
+        if not items:
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y, w, 24), Qt.AlignLeft | Qt.AlignVCenter, "Nothing scheduled.")
+            return
+        for i, it in enumerate(items):
+            yy = y + i * 32
+            if it["kind"] == "timer":
+                left = max(0.0, it["at"] - time.time())
+                draw_ring(p, x + 11, yy + 13, 9, left / max(1.0, it.get("total") or 1), 3)
+                right = _countdown(left)
+                name = (it.get("label") or "Timer").capitalize()
+            else:
+                draw_bell(p, x + 11, yy + 13, 16, T.SOFT)
+                right = _clock(it["at"])
+                if datetime.datetime.fromtimestamp(it["at"]).date() != datetime.date.today():
+                    right = datetime.datetime.fromtimestamp(it["at"]).strftime("%a ") + right
+                name = (it.get("message") or it.get("label") or it["kind"]).capitalize()
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 32, yy, w - 140, 26), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(name, Qt.ElideRight, int(w - 140)))
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x + w - 108, yy, 108, 26), Qt.AlignRight | Qt.AlignVCenter, right)
+
+    def _paint_todo(self, p, x, y, w):
+        items = self.card.get("items") or []
+        if not items:
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y, w, 24), Qt.AlignLeft | Qt.AlignVCenter, "All clear.")
+            return
+        fm = QFontMetrics(F_ROW)
+        for i, it in enumerate(items[:7]):
+            yy = y + i * 30
+            draw_check(p, x, yy + 3, 18, it.get("done"))
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT_FAINT if it.get("done") else T.TEXT)
+            f = QFont(F_ROW)
+            f.setStrikeOut(bool(it.get("done")))
+            p.setFont(f)
+            p.drawText(QRectF(x + 30, yy, w - 30, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                       fm.elidedText(it["text"], Qt.ElideRight, int(w - 30)))
+        if len(items) > 7:
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x + 30, y + 7 * 30, w, 18), Qt.AlignLeft, "+%d more" % (len(items) - 7))
+
+    def _paint_music(self, p, x, y, w):
+        c = self.card
+        g = QLinearGradient(QPointF(x, y), QPointF(x + 60, y + 60))
+        g.setColorAt(0, QColor(236, 72, 153))
+        g.setColorAt(1, QColor(124, 58, 237))
+        p.setPen(Qt.NoPen)
+        p.setBrush(g)
+        p.drawRoundedRect(QRectF(x, y, 60, 60), 14, 14)
+        p.setFont(T.font(30, family="Segoe UI Symbol"))
+        p.setPen(QColor(255, 255, 255))
+        p.drawText(QRectF(x, y, 60, 60), Qt.AlignCenter, "♫")
+        p.setFont(F_TITLE)
+        p.setPen(T.TEXT)
+        fm = QFontMetrics(F_TITLE)
+        p.drawText(QRectF(x + 76, y + 4, w - 120, 26), Qt.AlignLeft | Qt.AlignVCenter,
+                   fm.elidedText(c.get("title", ""), Qt.ElideRight, int(w - 120)))
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + 76, y + 32, w - 120, 22), Qt.AlignLeft | Qt.AlignVCenter, c.get("artist", ""))
+        if c.get("playing", True):
+            for k in range(4):
+                hgt = 6 + 14 * abs(math.sin(self.t * (4 + k * 1.3) + k))
+                p.setPen(Qt.NoPen)
+                p.setBrush(T.alpha(T.SOFT, 0.85))
+                p.drawRoundedRect(QRectF(x + w - 34 + k * 8, y + 40 - hgt, 4, hgt), 2, 2)
+
+    def _paint_system(self, p, x, y, w):
+        c = self.card
+        gauges = [("CPU", c.get("cpu")), ("RAM", c.get("ram")), ("Disk", c.get("disk"))]
+        if c.get("battery") is not None:
+            gauges.append(("Battery", c["battery"]))
+        n = len(gauges)
+        cw = w / n
+        for i, (name, val) in enumerate(gauges):
+            cx = x + cw * i + cw / 2
+            hot = val is not None and val >= 85 and name != "Battery"
+            colors = [QColor(251, 146, 60), QColor(239, 68, 68)] if hot else None
+            draw_ring(p, cx, y + 34, 30, (val or 0) / 100.0, 6, colors)
+            p.setFont(F_RING)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(cx - 30, y + 4, 60, 60), Qt.AlignCenter, "%d%%" % (val or 0))
+            p.setFont(F_SMALL)
+            p.setPen(T.LAVENDER if name.lower() == str(c.get("highlight", "")).lower() else T.TEXT_DIM)
+            p.drawText(QRectF(cx - 40, y + 72, 80, 20), Qt.AlignCenter, name)
+
+    def _paint_schedule(self, p, x, y, w):
+        rows = (self.card.get("rows") or [])[:6]
+        if not rows:
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y, w, 24), Qt.AlignLeft | Qt.AlignVCenter, "Nothing scheduled.")
+            return
+        for i, r in enumerate(rows):
+            yy = y + i * 32
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET if r.get("next") else T.SOFT, 0.9 if r.get("next") else 0.35))
+            p.drawRoundedRect(QRectF(x, yy + 4, 4, 20), 2, 2)
+            p.setFont(T.font(14, QFont.DemiBold))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 14, yy, 96, 28), Qt.AlignLeft | Qt.AlignVCenter, r.get("time", ""))
+            p.setFont(F_ROW)
+            p.drawText(QRectF(x + 112, yy, w - 112, 28), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(r.get("name", "").capitalize(), Qt.ElideRight, int(w - 112)))
+
+    def _paint_volume(self, p, x, y, w):
+        c = self.card
+        muted = c.get("muted")
+        level = 0 if muted else c.get("level", 0)
+        draw_speaker(p, x + 14, y + 18, 26, T.TEXT, muted)
+        bar = QRectF(x + 40, y + 13, w - 100, 10)
+        p.setPen(Qt.NoPen)
+        p.setBrush(T.alpha(T.SOFT, 0.14))
+        p.drawRoundedRect(bar, 5, 5)
+        if level:
+            g = QLinearGradient(bar.topLeft(), bar.topRight())
+            g.setColorAt(0, QColor(196, 160, 240))
+            g.setColorAt(1, QColor(139, 92, 246))
+            p.setBrush(g)
+            p.drawRoundedRect(QRectF(bar.left(), bar.top(), bar.width() * level / 100.0, bar.height()), 5, 5)
+        p.setFont(F_RING)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x + w - 52, y, 52, 36), Qt.AlignRight | Qt.AlignVCenter, "Muted" if muted else "%d" % level)
+
+    def _paint_clock(self, p, x, y, w):
+        c = self.card
+        p.setFont(T.font(40, QFont.Light))
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y - 4, w, 48), Qt.AlignLeft | Qt.AlignVCenter, c.get("time", ""))
+        p.setFont(F_ROW)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, y + 46, w, 24), Qt.AlignLeft | Qt.AlignVCenter, c.get("date", ""))
+
+    def _paint_briefing(self, p, x, y, w):
+        c = self.card
+        p.setFont(F_TITLE)
+        p.setPen(T.TEXT)
+        th = QFontMetrics(F_TITLE).height()
+        p.drawText(QRectF(x, y, w, th), Qt.AlignLeft | Qt.AlignVCenter, c.get("greeting", ""))
+        y += th + 10
+        for r in c.get("rows") or []:
+            h = _wrap_height(F_ROW, r["text"], w - 34)
+            icon = r.get("icon")
+            if icon == "weather":
+                draw_weather_icon(p, x - 2, y - 3, 26, int(r.get("code", 1)), True, self.t)
+            elif icon == "todo":
+                draw_check(p, x + 3, y + 1, 16, False)
+            else:
+                draw_bell(p, x + 11, y + 10, 16, T.SOFT) if icon == "bell" else None
+                if icon == "class":
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(T.alpha(T.VIOLET, 0.9))
+                    p.drawRoundedRect(QRectF(x + 8, y + 2, 4, 18), 2, 2)
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 34, y, w - 34, h + 2), Qt.TextWordWrap, r["text"])
+            y += h + 12
+
+    def _paint_alert(self, p, x, y, w):
+        c = self.card
+        pulse = 0.5 + 0.5 * math.sin(self.t * 6)
+        g = QRadialGradient(QPointF(x + 24, y + 24), 30)
+        g.setColorAt(0, T.alpha(T.VIOLET, 0.55 + 0.35 * pulse))
+        g.setColorAt(1, T.alpha(T.VIOLET, 0.0))
+        p.setPen(Qt.NoPen)
+        p.setBrush(g)
+        p.drawEllipse(QPointF(x + 24, y + 24), 30, 30)
+        draw_bell(p, x + 24, y + 24, 28, QColor(255, 255, 255))
+        th = QFontMetrics(F_TITLE).height()
+        p.setFont(F_TITLE)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x + 64, y, w - 64, th), Qt.AlignLeft | Qt.AlignVCenter, c.get("title", "Reminder"))
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        msg = c.get("message", "")
+        p.drawText(QRectF(x + 64, y + th + 6, w - 64, _wrap_height(F_SMALL, msg, w - 64) + 4), Qt.TextWordWrap, msg)
+
+    def _paint_image(self, p, x, y, w):
+        if self._image is None or self._image.isNull():
+            self._paint_text(p, x, y, w)
+            return
+        h = min(220, int(w * self._image.height() / max(1, self._image.width())))
+        target = QRectF(x, y, w, h)
+        path = QPainterPath()
+        path.addRoundedRect(target, 12, 12)
+        p.save()
+        p.setClipPath(path)
+        p.drawImage(target, self._image)
+        p.restore()
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, y + h + 6, w, 18), Qt.AlignLeft | Qt.AlignVCenter, "Saved to Desktop · copied")
+
+    def _paint_confirm(self, p, x, y, w):
+        self._paint_text(p, x, y, w)
+        th = _wrap_height(F_BODY, self.text, w)
+        chips = [("Yes", True), ("No", False)]
+        cx = x
+        for name, primary in chips:
+            r = QRectF(cx, y + th + 10, 64, 26)
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.85) if primary else T.alpha(T.SOFT, 0.15))
+            p.drawRoundedRect(r, 13, 13)
+            p.setFont(T.font(13, QFont.DemiBold))
+            p.setPen(T.TEXT)
+            p.drawText(r, Qt.AlignCenter, name)
+            cx += 74
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_FAINT)
+        p.drawText(QRectF(cx + 6, y + th + 10, w - cx, 26), Qt.AlignLeft | Qt.AlignVCenter, "Just say yes or no")

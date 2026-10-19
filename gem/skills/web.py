@@ -8,6 +8,7 @@ import webbrowser
 import requests
 
 from ..actions import ActionError, action
+from ..cards import card
 from ..runtime import svc
 
 log = logging.getLogger("gem.web")
@@ -105,24 +106,30 @@ def weather(city=None, when="now"):
         lat, lon, name = geo
         data = requests.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": lat, "longitude": lon, "timezone": "auto", "forecast_days": 2,
-            "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+            "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day",
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
         }, timeout=6).json()
     except requests.RequestException:
         return "I can't reach the weather service."
+    d = data["daily"]
     if when in ("today", "tomorrow"):
         i = 0 if when == "today" else 1
-        d = data["daily"]
-        desc = WEATHER_CODES.get(d["weather_code"][i], "mixed weather")
-        rain = d["precipitation_probability_max"][i]
-        return "%s in %s: %s, high of %d and low of %d degrees, %d percent chance of rain." % (
-            when.capitalize(), name, desc, round(d["temperature_2m_max"][i]), round(d["temperature_2m_min"][i]), rain or 0)
+        code = d["weather_code"][i]
+        desc = WEATHER_CODES.get(code, "mixed weather")
+        rain = d["precipitation_probability_max"][i] or 0
+        high, low = round(d["temperature_2m_max"][i]), round(d["temperature_2m_min"][i])
+        return card("weather", "%s in %s: %s, high of %d and low of %d degrees, %d percent chance of rain." % (
+            when.capitalize(), name, desc, high, low, rain), city=name, when=when, code=code, desc=desc,
+            high=high, low=low, rain=rain, is_day=True)
     c = data["current"]
     desc = WEATHER_CODES.get(c["weather_code"], "mixed weather")
     feels = round(c["apparent_temperature"])
     temp = round(c["temperature_2m"])
     feel = "" if abs(feels - temp) < 2 else ", feels like %d" % feels
-    return "It's %d degrees and %s in %s%s." % (temp, desc, name, feel)
+    return card("weather", "It's %d degrees and %s in %s%s." % (temp, desc, name, feel), city=name, when="now",
+                code=c["weather_code"], desc=desc, temp=temp, feels=feels, high=round(d["temperature_2m_max"][0]),
+                low=round(d["temperature_2m_min"][0]), rain=d["precipitation_probability_max"][0] or 0,
+                is_day=bool(c.get("is_day", 1)))
 
 
 @action("set_home_city", "Save the user's home city.", "city: str")
