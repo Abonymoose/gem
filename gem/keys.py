@@ -92,17 +92,28 @@ class TalkKey:
                     return 1
         return _user32.CallNextHookEx(None, code, wparam, lparam)
 
-    def _install(self):
+    @staticmethod
+    def _toggle_real_caps():
+        # Injected, so our own hook lets it through.
+        _user32.keybd_event(VK["caps"], 0x3A, 0, 0)
+        _user32.keybd_event(VK["caps"], 0x3A, 2, 0)
+
+    def _install(self, first=False):
         if self._hook:
             _user32.UnhookWindowsHookEx(self._hook)
         self._hook = _user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._proc, _kernel32.GetModuleHandleW(None), 0)
         if not self._hook:
             log.error("Could not install keyboard hook (error %d)", ctypes.get_last_error())
-        self._expected_caps = toggle_state(VK["caps"])
+        if first:
+            # Gem owns Caps Lock, so real caps starts off. Otherwise caps left on
+            # while Gem wasn't running could never be turned off with Caps Lock.
+            if toggle_state(VK["caps"]):
+                self._toggle_real_caps()
+            self._expected_caps = False
 
     def _hook_thread(self):
         self._thread_id = _kernel32.GetCurrentThreadId()
-        self._install()
+        self._install(first=True)
         msg = wt.MSG()
         while _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
             if msg.message == WM_APP_REINSTALL:
@@ -112,18 +123,23 @@ class TalkKey:
             _user32.DispatchMessageW(ctypes.byref(msg))
 
     def _watchdog(self):
-        """If Caps Lock toggled without Shift, Windows removed our hook."""
+        """If Caps Lock turned on without Shift, Windows removed our hook: undo it and re-hook.
+
+        It only ever turns caps off, never back on, so caps can't get stuck on.
+        """
         while True:
             time.sleep(2)
-            expected = self._expected_caps
-            if expected is None or self._thread_id is None:
-                self._expected_caps = toggle_state(VK["caps"])
+            if self._thread_id is None or self._passthrough:
                 continue
-            if toggle_state(VK["caps"]) != expected and not self._passthrough:
-                # Put caps back the way it was, then re-hook.
-                _user32.keybd_event(VK["caps"], 0x3A, 0, 0)
-                _user32.keybd_event(VK["caps"], 0x3A, 2, 0)
+            actual = toggle_state(VK["caps"])
+            expected = self._expected_caps
+            if expected is None:                 # just toggled on purpose with Shift+Caps Lock
+                self._expected_caps = actual
+            elif actual and not expected:
+                self._toggle_real_caps()
                 _user32.PostThreadMessageW(self._thread_id, WM_APP_REINSTALL, 0, 0)
+            elif not actual and expected:        # turned off some other way: accept it
+                self._expected_caps = False
 
     # ── Gesture recognition ─────────────────────────────────────────────────
 
