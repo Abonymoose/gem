@@ -1,0 +1,121 @@
+"""Working with text: selection and clipboard tools, typing, and dictation."""
+import logging
+import re
+import time
+
+from ..actions import ActionError, action
+from ..runtime import svc
+from ..winapi import copy_selection, get_clipboard, paste_text, press, release_modifiers, set_clipboard, type_text
+
+log = logging.getLogger("gem.text")
+
+MAX_CHARS = 9000
+
+
+def _source_text(source):
+    if source == "clipboard":
+        text = get_clipboard()
+    else:
+        text = copy_selection()
+        if not text.strip() and source == "auto":
+            text = get_clipboard()
+    text = (text or "").strip()
+    if not text:
+        raise ActionError("Select some text first, or copy it to the clipboard.")
+    return text[:MAX_CHARS]
+
+
+@action("text_tool", "Work on the selected text (or clipboard).", "task: summarize|explain|rewrite|fix_grammar|shorten|translate|reply|custom, instruction?: str, source?: selection|clipboard, output?: speak|replace|clipboard")
+def text_tool(task="summarize", instruction="", source="auto", output=None):
+    text = _source_text(source)
+    prompts = {
+        "summarize": "Summarize this for someone listening, in two or three plain sentences.",
+        "explain": "Explain this simply in two to four plain sentences for someone listening.",
+        "rewrite": "Rewrite this text. Keep the meaning and the original language unless told otherwise.",
+        "fix_grammar": "Fix spelling, grammar and punctuation. Change nothing else.",
+        "shorten": "Make this text noticeably shorter while keeping the key points.",
+        "translate": "Translate this text.",
+        "reply": "Write a reply to this message in the same language and a matching tone.",
+        "custom": "Follow the instruction for this text.",
+    }
+    base = prompts.get(task, prompts["custom"])
+    spoken = task in ("summarize", "explain")
+    if output is None:
+        output = "speak" if spoken else ("clipboard" if task == "reply" else "replace")
+    rules = " Output only the result, with no preamble or quotes." if output != "speak" else \
+        " No markdown or lists; it will be read aloud."
+    prompt = base + (" Instruction: %s." % instruction if instruction else "") + rules
+    result = svc.brain.complete(prompt, text, max_tokens=900)
+    if output == "speak":
+        return result
+    if output == "clipboard":
+        set_clipboard(result)
+        return "Done, it's on your clipboard."
+    paste_text(result)
+    return None
+
+
+@action("type_text", "Type text into the focused app.", "text: str")
+def type_into_app(text=""):
+    if not text:
+        raise ActionError("What should I type?")
+    release_modifiers()
+    type_text(text)
+    return None
+
+
+@action("read_clipboard", "Read the clipboard text aloud.", ai=False)
+def read_clipboard():
+    text = get_clipboard().strip()
+    if not text:
+        return "The clipboard is empty."
+    return text[:600] + ("..." if len(text) > 600 else "")
+
+
+# ── Dictation ────────────────────────────────────────────────────────────────
+
+_last_chunk = ""
+
+STOP_WORDS = {"stop dictation", "stop dictating", "end dictation", "done dictating", "finish dictation",
+              "stop typing", "dictation off", "that's it", "done"}
+
+
+@action("dictation", "Dictation mode on/off.", "on: bool")
+def dictation(on=True):
+    svc.state.update(dictating=bool(on))
+    if on:
+        return "Dictation on. Say stop dictation when you're done."
+    return "Dictation off."
+
+
+def handle_dictation(text):
+    """Called by the assistant for every utterance while dictating."""
+    global _last_chunk
+    plain = re.sub(r"[^a-z' ]+", "", text.lower()).strip()
+    if plain in STOP_WORDS:
+        svc.state.update(dictating=False)
+        return "Dictation off."
+    if plain in ("delete that", "scratch that", "undo that"):
+        if _last_chunk:
+            release_modifiers()
+            for _ in range(len(_last_chunk)):
+                press("backspace")
+            _last_chunk = ""
+        return None
+    if plain in ("new line", "next line"):
+        type_text("\n")
+        return None
+    if plain in ("new paragraph", "next paragraph"):
+        type_text("\n\n")
+        return None
+    if plain in ("press enter", "send it", "send"):
+        press("enter")
+        return None
+    chunk = re.sub(r"\s*\b(new line|next line)\b\s*", "\n", text, flags=re.I)
+    chunk = re.sub(r"\s*\b(new paragraph)\b\s*", "\n\n", chunk, flags=re.I)
+    chunk = chunk.strip() + " "
+    release_modifiers()
+    type_text(chunk)
+    _last_chunk = chunk
+    time.sleep(0.05)
+    return None

@@ -1,127 +1,136 @@
 # Gem — Voice Assistant
 
-A sarcastic, always-on Windows voice assistant with a live animated overlay, system controls, AI fallback via Groq, and persistent alarms.
+A fast, quiet, genuinely useful voice assistant for Windows. Hold Caps Lock, say what you want, let go.
+Gem runs common commands instantly on your PC and uses Groq's free AI models for everything else.
 
-## Features
+## Talking to Gem
 
-- Wake/sleep with a voice trigger ("gem wake up")
-- Weather, time, date, Wikipedia lookups
-- Open and close apps by voice
-- Volume control (set, mute, relative up/down)
-- YouTube search and direct playback
-- Google search
-- Alarms and reminders (one-off and recurring scheduled)
-- System stats (CPU, RAM, disk)
-- Screenshots (saved to Desktop + clipboard)
-- Voice dictation mode
-- Jokes, coin flip, dice roll, random facts, roasts, compliments
-- Ping test, PC uptime
-- AI fallback via Groq (llama-3.3-70b-versatile)
-- Silent mode, Ruhig (deaf) mode, Gaming mode
-- Animated tkinter overlay (crystal eye, sleeping stars, sniper scope, glitch, void)
-- System tray icon
-- Panic hotkey (`Ctrl+Alt+Shift+Tab+P`)
+Caps Lock is Gem's key. It never turns your typing into capitals (Shift + Caps Lock still toggles real caps).
 
-## Voice Commands
+| Gesture | Push-to-talk mode (default) | Always-listening mode |
+|---|---|---|
+| **Hold** Caps Lock | Gem listens while held | Gem is muted while held |
+| **Tap** Caps Lock | Stop Gem talking | Stop Gem talking |
+| **Triple-tap** Caps Lock | Switch to always-listening | Switch to push-to-talk |
 
-| Command | What it does |
+While you hold Caps Lock to talk, the Num, Caps and Scroll Lock lights sweep on and stay lit; they go back to
+normal when you let go. A different light pattern confirms each mode switch.
+
+In **always-listening** mode there's no wake word. Gem hears everything but only reacts when the speech is
+clearly meant for her (an AI check filters out conversation, calls and video audio). Saying "Gem" anywhere
+in a sentence makes it certain. After she replies you have ~25 seconds for follow-ups.
+
+### Quiet time
+
+| Say | What happens |
 |---|---|
-| `gem wake up` | Wake Gem from sleep |
-| `what time is it` | Speaks the current time |
-| `what's the date` | Speaks today's date |
-| `weather [city]` | Current weather for a city |
-| `open [app]` | Launches an app (brave, discord, spotify, steam, vscode, …) |
-| `close [app]` | Kills a running app by process name |
-| `volume [0-100]` / `volume up/down` | Set or adjust system volume |
-| `mute` / `unmute` | Toggle system mute |
-| `play [song] on youtube` | Opens the first YouTube result |
-| `search for [query]` | Google search |
-| `who is / what is [topic]` | Wikipedia summary |
-| `set an alarm for [time]` | One-off alarm (7am, in 10 minutes, …) |
-| `remind me in [N] minutes to [thing]` | Timed reminder |
-| `list alarms` | Lists active alarms |
-| `tell me a joke` | Fetches or falls back to a built-in joke |
-| `flip a coin` | Heads or tails |
-| `roll a dice` / `roll a [N]-sided dice` | Dice roll |
-| `roast me` | Gem insults you |
-| `compliment me` | Gem reluctantly compliments you |
-| `random fact` | A random fact |
-| `system stats` | CPU, RAM, disk summary |
-| `screenshot` | Saves to Desktop and copies to clipboard |
-| `dictate` / `start dictation` | Starts voice-to-text dictation mode |
-| `ping` | Tests internet latency |
-| `pc uptime` | How long the PC has been on |
-| `clear memory` | Wipes Groq chat history |
-| `repeat that` | Repeats Gem's last spoken response |
-| `what can you do` | Full capabilities list |
-| `gaming mode` | Enables sniper scope overlay + silence |
-| `shut up` | Silence mode on (no voice output) |
-| `speak up` | Silence mode off |
-| `Ruhig` | Deaf mode — ignores all commands |
-| `Weiter` | Exits Ruhig mode |
-| `Sperren` | Locks the screen |
-| `Schluss` | Exits Gem |
+| "shut up for a bit" / "be quiet" | Quiet for 10 minutes, then she comes back on her own |
+| "quiet for an hour" / "shut up for 30 minutes" | Custom length |
+| "I'm back" / "speak up" | End quiet time early |
+| **Ruhig** / **Weiter** | Quiet until you say Weiter |
+
+Push-to-talk always works, even during quiet time (replies show as text instead of voice).
+
+### Calls
+
+When another app is using your microphone (Discord, Teams, Zoom, Meet in the browser, in-game voice chat),
+Gem automatically:
+
+- stops listening (always-listening falls back to push-to-talk),
+- answers with on-screen captions instead of speaking,
+- turns alarm sounds into silent popups and a light flash.
+
+Everything returns to normal when the call ends.
+
+### Typing instead of talking
+
+Press **Ctrl + Alt + Space** (or click the crystal) to open a command bar and type a request. Handy in calls.
+
+## What Gem can do
+
+| Area | Try saying |
+|---|---|
+| Apps & sites | "open Spotify", "close Discord", "switch to Brave", "open GitHub dot com", "open my downloads", "open bluetooth settings" |
+| Files | "open my latest download", "find the file called resume" |
+| Volume | "volume 40", "turn it down", "mute Spotify", "lower Discord", "Spotify volume 30" |
+| Media | "pause", "next song", "what's playing", "play lofi beats on YouTube", "play Blinding Lights on Spotify" (opens it in Spotify's search) |
+| Windows | "show desktop", "snap this left", "minimize", "close this window", "take a screenshot of this window", "snip" |
+| Timers & alarms | "10 minute timer for pasta", "set an alarm for 6:30 am", "how much time is left", "cancel the timer", "snooze" |
+| Reminders | "remind me to call mom in 15 minutes", "remind me tomorrow at 8 am to submit the essay", "remind me to drink water every hour" |
+| Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" |
+| To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note that…", "read my notes" |
+| Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
+| Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
+| Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
+| Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to German", "write a reply" |
+| Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
+| PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
+| Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
+| Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
+| Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
+
+Control words still work as before: **Sperren** locks the PC, **Schluss** closes Gem.
 
 ## Setup
 
-### 1. Install Python 3.10+
+1. Install Python 3.10+.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Set your Groq key (free at [console.groq.com](https://console.groq.com)). It powers speech recognition
+   (Whisper) and the AI. Without it Gem falls back to Google's free recognizer and only local commands work.
+   ```cmd
+   setx GROQ_API_KEY your_key_here
+   ```
+4. Run:
+   ```bash
+   pythonw gem2.py
+   ```
 
-Download from [python.org](https://www.python.org/).
+No weather key is needed any more (Gem uses Open-Meteo).
 
-### 2. Install dependencies
+## Settings and data
 
-```bash
-pip install -r requirements.txt
-```
+Everything lives in `C:\Users\<you>\.gem\` (tray icon → Data folder):
 
-### 3. Set environment variables
+| File | What |
+|---|---|
+| `settings.json` | All options: voice, AI models, hotkeys, app aliases, websites, panic behaviour, control words. Restart Gem after editing. |
+| `reminders.json` | Timers, alarms, reminders and the weekly class schedule (your old `gem_alarms.json` is imported on first run) |
+| `todo.json`, `notes.md`, `memory.json` | To-do list, notes, remembered facts |
+| `gem.log` | Log, useful if something doesn't work |
 
-Gem reads secrets from environment variables. Set these before running:
+Apps are found automatically from the Start Menu, so app updates (like Discord's) no longer break "open".
+Add aliases or exact paths under `"apps"` in settings.json.
 
-| Variable | Required | Description |
-|---|---|---|
-| `OPENWEATHER_API_KEY` | For weather | Free key from [openweathermap.org](https://openweathermap.org/api) |
-| `GROQ_API_KEY` | For AI fallback | Free key from [console.groq.com](https://console.groq.com) |
+The tray menu has mode, quiet time, voice on/off, gaming mode, overlay visibility and **Start with Windows**.
 
-**Windows — set for current session:**
-```cmd
-set OPENWEATHER_API_KEY=your_key_here
-set GROQ_API_KEY=your_key_here
-```
+### AI models
 
-**Windows — set permanently (System Properties → Environment Variables)** or add to your shell profile.
+Gem uses Groq's free tier: `openai/gpt-oss-120b` first, then `qwen/qwen3.8-27b` and `openai/gpt-oss-20b`
+when one is rate-limited, and `whisper-large-v3-turbo` for speech. Change the order under `"ai"` and `"stt"`.
 
-### 4. Configure app paths (optional)
+### Panic hotkey
 
-The `APPS` dict in `gem2.py` contains hardcoded paths for apps like Discord, Spotify, VS Code, and Lunar Client. Update these paths to match your system if needed.
-
-### 5. Run
-
-```bash
-python gem2.py
-```
-
-Gem starts in sleep mode. Say **"gem wake up"** to activate it.
+`Ctrl + Alt + Shift + Tab + P` mutes the PC, closes the games listed in settings, shows the desktop, opens
+Gmail and hides Gem. Say **Weiter** (holding Caps Lock) or use the tray to bring her back. Voice phrases for
+panic can be added under `"panic"` → `"voice_phrases"`.
 
 ## Building the EXE
 
-Uses [PyInstaller](https://pyinstaller.org/):
-
 ```bash
 pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed --icon=gem.ico gem2.py
+build.bat
 ```
 
-The executable will be in `dist/gem2.exe`. You can rename it to `gem.exe`.
+The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the voice detector). If you used to start Gem by copying the old exe into your Startup folder,
+delete that copy and use **Start with Windows** in the tray menu instead, so the old version doesn't start too.
 
-**Note:** The `dist/` and `build/` folders are excluded from version control.
+## Privacy
 
-## Alarms & Schedule
-
-Gem ships with a default class schedule (French and English classes). On first run, this is written to `gem_alarms.json` in the project folder. You can edit alarms by voice:
-
-- `add class` — guided voice setup for a new recurring alarm
-- `remove class [name]` — removes a scheduled alarm
-- `list alarms` — lists all active alarms
-
-`gem_alarms.json` is excluded from version control (contains personal schedule).
+- In push-to-talk mode nothing you say leaves the PC unless you're holding Caps Lock. (The mic stays open so
+  the first word isn't cut off, which is why Windows shows the mic icon.)
+- In always-listening mode, speech is sent to Groq for transcription; short fragments and filler are dropped
+  before any AI call.
+- Notes, to-dos, reminders and memory are stored only in `.gem` on your PC.
