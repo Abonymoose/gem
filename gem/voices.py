@@ -11,12 +11,14 @@ from .config import DATA_DIR
 log = logging.getLogger("gem.voices")
 
 VOICE_DIR = os.path.join(DATA_DIR, "voices")
-HF = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/{speaker}/{quality}/en_US-{speaker}-{quality}{ext}"
+HF = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/{lang}/{speaker}/{quality}/{lang}-{speaker}-{quality}{ext}"
 
 PIPER_VOICES = [
-    ("Lessac (natural)", "en_US-lessac-medium"),
-    ("Amy (bright)", "en_US-amy-medium"),
-    ("HFC (clear)", "en_US-hfc_female-medium"),
+    ("Amy", "en_US-amy-medium"),
+    ("Kristin", "en_US-kristin-medium"),
+    ("Jenny (British)", "en_GB-jenny_dioco-medium"),
+    ("HFC", "en_US-hfc_female-medium"),
+    ("Lessac", "en_US-lessac-medium"),
 ]
 
 _lock = threading.Lock()
@@ -39,10 +41,10 @@ def ensure(name):
         if available(name):
             return True
         try:
-            _, speaker, quality = name.split("-", 2)
+            lang, speaker, quality = name.split("-", 2)
             os.makedirs(VOICE_DIR, exist_ok=True)
             for ext in (".onnx.json", ".onnx"):
-                url = HF.format(speaker=speaker, quality=quality, ext=ext)
+                url = HF.format(lang=lang, speaker=speaker, quality=quality, ext=ext)
                 tmp = model_path(name) + ext[len(".onnx"):] + ".part"
                 log.info("Downloading voice %s%s", name, ext)
                 with requests.get(url, stream=True, timeout=30) as r:

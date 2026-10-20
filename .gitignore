@@ -10,3 +10,6 @@ gem_alarms.json
 __pycache__/
 *.pyc
 *.pyo
+
+# Voice comparison clips
+voice_samples/

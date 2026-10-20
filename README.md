@@ -1,4 +1,4 @@
-# Gem — Voice Assistant
+﻿# Gem â€” Voice Assistant
 
 A fast, quiet, genuinely useful voice assistant for Windows. Hold Caps Lock, say what you want, let go.
 Gem runs common commands instantly on your PC and uses Groq's free AI models for everything else.
@@ -26,9 +26,9 @@ In always-listening mode a small violet dot in the pill shows that the mic is li
 
 ### Gem's voice
 
-Gem speaks with a neural voice that runs **on your PC** (Piper). It starts within a fraction of a second,
+Gem speaks with Amy, a neural voice that runs **on your PC** (Piper). It starts within a fraction of a second,
 sounds the same every time and works offline; phrases she says often are cached and play instantly. The voice
-model (about 60 MB) downloads once on first run. Settings → Voice lets you pick another local voice or switch
+model (about 60 MB) downloads once on first run. Settings â†’ Voice lets you pick another local voice or switch
 to the online Microsoft voices, which sound a little richer but can take a few seconds to start.
 
 ## Talking to Gem
@@ -87,12 +87,12 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Timers & alarms | "10 minute timer for pasta", "set an alarm for 6:30 am", "how much time is left", "cancel the timer", "snooze" |
 | Reminders | "remind me to call mom in 15 minutes", "remind me tomorrow at 8 am to submit the essay", "remind me to drink water every hour" |
 | Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" |
-| To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note that…", "read my notes" |
+| To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note thatâ€¦", "read my notes" |
 | Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
-| Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
+| Briefing | "good morning" / "brief me" â€” date, weather, today's classes, reminders and to-dos |
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
 | Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish" |
-| Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
+| Dictation | "start dictation" â€¦ "new line" â€¦ "delete that" â€¦ "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
@@ -108,8 +108,8 @@ Gem never sends messages by itself: it types into the message box you're in, and
 
 - **Away note**: say "I'm stepping away for 30 minutes" (or "away mode until 6"). In any chat or email, "tell them
   I'm away" types *"Parshv isn't here right now, this is his voice assistant speaking. He'll be back in about 25
-  minutes."* The island shows *Away · back 4:30*; "I'm back" ends it. Edit the wording in Settings → You.
-- **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmail…), click in the reply box and say
+  minutes."* The island shows *Away Â· back 4:30*; "I'm back" ends it. Edit the wording in Settings â†’ You.
+- **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmailâ€¦), click in the reply box and say
   "reply to this". Gem writes a reply that matches how you write in that chat and shows it in the island.
   "Make it shorter", "more casual" or "try again" rewrite it in place. The draft also stays on your clipboard.
 
@@ -135,10 +135,10 @@ No weather key is needed any more (Gem uses Open-Meteo).
 ## Settings and data
 
 Change settings in the Gem window's **Settings** page: voice (with a Test button), look and sound, microphone,
-keys, productivity, AI models, panic, app names, websites and Start with Windows. Items marked ↻ apply after
+keys, productivity, AI models, panic, app names, websites and Start with Windows. Items marked â†» apply after
 **Restart Gem** (same page).
 
-Everything lives in `C:\Users\<you>\.gem\` (tray icon → More → Data folder):
+Everything lives in `C:\Users\<you>\.gem\` (tray icon â†’ More â†’ Data folder):
 
 | File | What |
 |---|---|
@@ -159,7 +159,7 @@ when one is rate-limited, and `whisper-large-v3-turbo` for speech. Change the or
 
 `Ctrl + Alt + Shift + Tab + P` mutes the PC, closes the games listed in settings, shows the desktop, opens
 Gmail and hides Gem. Hold Caps Lock and say "I'm back", or use the tray, to bring her back. Voice phrases for
-panic can be added under `"panic"` → `"voice_phrases"`.
+panic can be added under `"panic"` â†’ `"voice_phrases"`.
 
 ## Building the EXE
 

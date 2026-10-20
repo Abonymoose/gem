@@ -32,7 +32,7 @@ _EDGE_RATE = 24000            # edge-tts sends 24 kHz mono MP3
 _FIRST_AUDIO_TIMEOUT = 2.5    # seconds before a stuck online request is retried
 _START_BUFFER = 5000          # MP3 bytes (~0.8 s) buffered before online playback starts
 _CAPTION_WAIT = 1.2           # longest the card waits for the voice
-DEFAULT_PIPER = "en_US-lessac-medium"
+DEFAULT_PIPER = "en_US-amy-medium"
 
 
 def clean_for_speech(text):

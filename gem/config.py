@@ -70,7 +70,7 @@ DEFAULTS = {
         # "piper" (on this PC: instant, same voice every time), "edge" (online Microsoft voices, can lag)
         # or "sapi" (the old Windows voices).
         "engine": "piper",
-        "piper_voice": "en_US-lessac-medium",
+        "piper_voice": "en_US-amy-medium",
         "edge_voice": "en-US-AvaMultilingualNeural",
         "sapi_voice": "Zira",
         "rate": "+5%",
