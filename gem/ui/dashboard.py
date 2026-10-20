@@ -879,6 +879,7 @@ VOICES = [("Ava (US, natural)", "en-US-AvaMultilingualNeural"), ("Emma (US)", "e
 FIELDS = [
     ("You", "Your name", "user_name", "text", None, False),
     ("You", "Home city (weather, briefings)", "home_city", "text", None, False),
+    ("You", "Away note ({name} and {when} are filled in)", "away_message", "text", None, False),
     ("Voice", "Engine", "voice.engine", "choice", [("On this PC: instant, same voice always", "piper"),
                                                   ("Online Microsoft voices: richer, can lag", "edge"),
                                                   ("Old Windows voices", "sapi")], False),

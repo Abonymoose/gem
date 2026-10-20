@@ -91,7 +91,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
 | Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
-| Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish", "write a reply" |
+| Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish" |
 | Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
@@ -101,6 +101,17 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
 
 To lock the PC say "lock my PC"; to close Gem say "close Gem" or use the tray.
+
+### Reply mode
+
+Gem never sends messages by itself: it types into the message box you're in, and you press Enter.
+
+- **Away note**: say "I'm stepping away for 30 minutes" (or "away mode until 6"). In any chat or email, "tell them
+  I'm away" types *"Parshv isn't here right now, this is his voice assistant speaking. He'll be back in about 25
+  minutes."* The island shows *Away · back 4:30*; "I'm back" ends it. Edit the wording in Settings → You.
+- **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmail…), click in the reply box and say
+  "reply to this". Gem writes a reply that matches how you write in that chat and shows it in the island.
+  "Make it shorter", "more casual" or "try again" rewrite it in place. The draft also stays on your clipboard.
 
 ## Setup
 

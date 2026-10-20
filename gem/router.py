@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 
 from .parse import parse_duration, parse_percent, parse_when, words_to_numbers
-from .skills import apps, timers
+from .skills import apps, replies, timers
 
 
 @dataclass
@@ -148,6 +148,33 @@ def _rules():
     @rule(r"^(?:turn on|enable|use) (?:your )?voice(?: replies)?$|^talk out loud$", safe=False)
     def _(m, t):
         return Match("voice_replies", {"on": True}, False)
+
+    # Reply mode
+    @rule(r"^(?:i'm |i am )?(?:going |stepping |heading )?(?:away|afk)(?: mode)?(?: for (.+)| until (.+))?$|"
+          r"^(?:set |turn on )?away mode(?: for (.+)| until (.+))?$|^i'll be back (?:in (.+)|at (.+))$", safe=False)
+    def _(m, t):
+        g = m.groups()
+        dur = g[0] or g[2] or g[4]
+        until = g[1] or g[3] or g[5]
+        secs = parse_duration(dur) if dur else None
+        return Match("away_start", {"minutes": secs / 60.0} if secs else ({"until": until} if until else {}), False)
+
+    @rule(r"^(?:tell (?:them|him|her|everyone|people) (?:that )?i'm away|say (?:that )?i'm away|"
+          r"(?:send |type )?(?:my )?away (?:message|note)|reply (?:that )?i'm away)$", safe=False)
+    def _(m, t):
+        return Match("away_note", {}, False)
+
+    @rule(r"^(?:make it|make that) (.+)$|^(try again|another one|redo it|rewrite it|different one|change it|"
+          r"shorter|longer|more casual|more formal|funnier|nicer)$", safe=False)
+    def _(m, t):
+        if not replies.recent_draft():
+            return None
+        return Match("reply_revise", {"instruction": m.group(1) or m.group(2)}, False)
+
+    @rule(r"^(?:reply to (?:this|that|them|him|her|it)|(?:draft|write) a (?:reply|response)(?: to (?:this|that|it))?|"
+          r"reply for me|answer (?:this|that|them) for me)$", safe=False)
+    def _(m, t):
+        return Match("reply_draft", {}, False)
 
     # Time and date
     @rule(r"^(?:what's the time|what is the time|what time is it|what's the time now|the time|time|"
@@ -574,10 +601,6 @@ def _rules():
     def _(m, t):
         style = m.group(2) or m.group(4) or ""
         return Match("text_tool", {"task": "rewrite", "instruction": style}, False)
-
-    @rule(r"^(?:write|draft) a (?:reply|response)(?: to %s)?$|^reply to %s$" % (_THIS, _THIS), safe=False)
-    def _(m, t):
-        return Match("text_tool", {"task": "reply"}, False)
 
     @rule(r"^(?:read (?:my |the )?clipboard|what's (?:on|in) (?:my |the )?clipboard)$")
     def _(m, t):

@@ -198,7 +198,7 @@ def draw_ring(p, cx, cy, r, progress, width, colors=None, track=None):
 LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "ALARM", "timers": "TIMERS & REMINDERS",
           "todo": "TO-DO", "music": "NOW PLAYING", "system": "THIS PC", "schedule": "SCHEDULE", "volume": "VOLUME",
           "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
-          "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE"}
+          "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT"}
 
 
 class CardContent:
@@ -243,6 +243,8 @@ class CardContent:
             label = (c.get("title") or "Alarm").upper()
         if self.kind == "focus" and c.get("phase") == "break":
             label = "BREAK"
+        if self.kind == "draft" and c.get("title"):
+            label = c["title"].upper()
         if self.kind == "routine" and c.get("name"):
             label += " · " + c["name"].upper()
         return label
@@ -294,6 +296,8 @@ class CardContent:
             return min(220, int(w * self._image.height() / max(1, self._image.width()))) + 26
         if k == "confirm":
             return _wrap_height(F_BODY, self.text, w) + 40
+        if k == "draft":
+            return _wrap_height(F_BODY, c.get("note", ""), w - 16) + 14 + _wrap_height(F_SMALL, self.text, w)
         if k == "web":
             return _wrap_height(F_BODY, self.text, w) + (36 if c.get("sources") else 0)
         if k == "routine":
@@ -660,3 +664,16 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_DIM)
         p.drawText(QRectF(x, ty, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)
+
+    def _paint_draft(self, p, x, y, w):
+        note = self.card.get("note", "")
+        nh = _wrap_height(F_BODY, note, w - 16)
+        p.setPen(Qt.NoPen)
+        p.setBrush(T.alpha(T.VIOLET, 0.9))
+        p.drawRoundedRect(QRectF(x, y + 2, 3, nh - 2), 1.5, 1.5)
+        p.setFont(F_BODY)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x + 16, y, w - 16, nh + 4), Qt.TextWordWrap, note)
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, y + nh + 14, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)

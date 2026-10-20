@@ -99,6 +99,9 @@ DEFAULTS = {
 
     "snooze_minutes": 10,
 
+    # Typed by "tell them I'm away". {name} = your name, {when} = "in about 20 minutes" / "soon".
+    "away_message": "{name} isn't here right now, this is his voice assistant speaking. He'll be back {when}.",
+
     "reminders": {
         "break_minutes": 20,
         "break_message": "Time for a quick break. Drink some water.",

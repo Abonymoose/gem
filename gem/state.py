@@ -28,6 +28,7 @@ class State:
         self.gaming = False
         self.dictating = False
         self.focus_until = 0.0
+        self.away_until = 0.0         # epoch seconds; math.inf = away, no return time
         self.voice_enabled = True
         self.speak_in_calls = False
         self.speak_in_gaming = False
@@ -103,6 +104,8 @@ class State:
             parts.append("quiet until you say I'm back")
         elif self.snoozed:
             parts.append("quiet until " + time.strftime("%H:%M", time.localtime(self.snoozed_until)))
+        if self.away_until:
+            parts.append("away")
         if self.in_call:
             parts.append("on a call")
         if self.gaming:

@@ -38,9 +38,11 @@ def quiet_until_resumed():
 
 @action("resume", "End quiet time.")
 def resume():
-    was = svc.state.snoozed
-    svc.state.update(snoozed_until=0.0, hidden=False)
-    return "I'm back." if was else "I'm here."
+    was_quiet, was_away = svc.state.snoozed, bool(svc.state.away_until)
+    svc.state.update(snoozed_until=0.0, hidden=False, away_until=0.0)
+    if was_away:
+        return "Welcome back."
+    return "I'm back." if was_quiet else "I'm here."
 
 
 @action("set_mode", "Listening mode.", "mode: push_to_talk|always_listening|toggle")

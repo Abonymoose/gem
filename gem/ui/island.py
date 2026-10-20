@@ -147,7 +147,7 @@ class Island(QWidget):
         if seconds is None:
             seconds = 8.0 if kind == "pending" else max(3.5, len(self.content.text) / 12.0)
         if kind in ("timer", "focus", "weather", "system", "todo", "timers", "schedule", "briefing", "music", "web",
-                    "routine"):
+                    "routine", "draft"):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)
@@ -275,6 +275,9 @@ class Island(QWidget):
             total = float(svc.config["focus"].get("work_minutes", 25)) * 60
             left = st.focus_until - time.time()
             act = {"kind": "focus", "label": "Focus", "value": _countdown(left), "progress": left / max(total, left)}
+        if act is None and st.away_until:
+            back = "" if st.away_until == math.inf else                 "back " + time.strftime("%I:%M", time.localtime(st.away_until)).lstrip("0")
+            act = {"kind": "away", "label": "Away", "value": back}
         if act is None and st.dictating:
             act = {"kind": "dictating", "label": "Dictating", "value": ""}
         if act is None:
@@ -520,6 +523,12 @@ class Island(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(T.SOFT)
             p.drawPath(moon.subtracted(cut))
+        elif kind == "away":
+            p.setPen(QPen(T.SOFT, 1.4))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(QPointF(ix, cy), 6, 6)
+            p.drawLine(QPointF(ix, cy), QPointF(ix, cy - 3.6))
+            p.drawLine(QPointF(ix, cy), QPointF(ix + 2.8, cy + 1.2))
         elif kind == "gaming":
             p.setPen(QPen(T.SOFT, 1.4))
             p.setBrush(Qt.NoBrush)
@@ -530,7 +539,7 @@ class Island(QWidget):
         self._text(p, ix + 14, cy, rect.right() - ix - 30 - vw, a["label"])
         if a["value"]:
             self._text(p, rect.right() - 18 - vw, cy, vw + 2, a["value"], F_VALUE,
-                       T.TEXT_DIM if kind in ("call", "quiet") else T.SOFT, Qt.AlignRight)
+                       T.TEXT_DIM if kind in ("call", "quiet", "away") else T.SOFT, Qt.AlignRight)
 
     def _paint_listening(self, p, rect):
         cy = rect.height() / 2 + 1
