@@ -15,7 +15,7 @@ from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import control, routines, text as text_skill
+from .skills import routines, text as text_skill
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -86,7 +86,7 @@ class Assistant:
             return False, []
 
     def quit(self):
-        say("Auf Wiedersehen.")
+        say("Goodbye.")
         threading.Thread(target=self._quit_after_speech, daemon=True).start()
 
     def _quit_after_speech(self):
@@ -134,13 +134,6 @@ class Assistant:
             finally:
                 svc.state.update(thinking=False)
 
-    def _control_word(self, plain):
-        words = svc.config.get("control_words", {})
-        for kind in ("quit", "lock", "ruhig", "weiter"):
-            if plain in (words.get(kind) or []):
-                return kind
-        return None
-
     def _handle(self, item):
         st = svc.state
         explicit = item.source in ("ptt", "typed")
@@ -164,19 +157,6 @@ class Assistant:
             if by_name or explicit:
                 self._respond("Yes?", text, item.source, [])
             return
-
-        # Control words work in every mode and never need the AI.
-        kind = self._control_word(plain)
-        if kind == "quit":
-            return self.quit()
-        if kind == "lock":
-            return actions.run("power", {"command": "lock"})
-        if kind == "ruhig":
-            return control.ruhig()
-        if kind == "weiter":
-            was_quiet = st.snoozed
-            st.update(snoozed_until=0.0, hidden=False)
-            return say("Ich bin wieder da." if was_quiet else "Ich bin da.")
 
         if plain in (svc.config.get("panic", {}).get("voice_phrases") or []):
             return self.panic()

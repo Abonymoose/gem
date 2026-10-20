@@ -27,17 +27,19 @@ def snooze(minutes=None):
     return None
 
 
-def ruhig():
+@action("quiet_until_resumed", "Stay quiet until the user says \"I'm back\".")
+def quiet_until_resumed():
     svc.voice.stop()
     svc.state.update(snoozed_until=math.inf)
     _feedback()
-    caption("Ruhig. Hold Caps Lock and say Weiter to bring me back.", seconds=4)
+    caption("Quiet until you say I'm back.", seconds=4)
+    return None
 
 
 @action("resume", "End quiet time.")
 def resume():
     was = svc.state.snoozed
-    svc.state.update(snoozed_until=0.0)
+    svc.state.update(snoozed_until=0.0, hidden=False)
     return "I'm back." if was else "I'm here."
 
 

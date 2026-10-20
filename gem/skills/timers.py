@@ -419,7 +419,7 @@ class Scheduler:
 
     def _snooze(self):
         st = svc.state
-        if st.snoozed_until and not st.ruhig and time.time() >= st.snoozed_until:
+        if st.snoozed_until and not st.quiet_indefinitely and time.time() >= st.snoozed_until:
             st.update(snoozed_until=0.0)
             caption("I'm back.")
             if svc.lights:

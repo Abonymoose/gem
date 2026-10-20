@@ -20,9 +20,7 @@ HALLUCINATIONS = {
     "bye bye", "the end", "so", "uh", "um", "hmm", "mm", "oh", "ah", "", "subtitles by the amara org community",
     "please subscribe", "music", "silence", "applause", "laughter", "i", "a", "the",
 }
-
-# Vocabulary hint so names and Gem's control words come out spelled right.
-PROMPT = "Gem, open Spotify. Ruhig. Weiter. Sperren. Schluss. Discord, Brave, VS Code, YouTube."
+# No vocabulary prompt on purpose: Whisper tends to "hear" prompt words in background noise.
 
 
 def to_wav(pcm):
@@ -43,7 +41,7 @@ class Transcriber:
     def __init__(self, cfg):
         self.backends = cfg.get("backends", ["groq", "google"])
         self.models = cfg.get("groq_models", ["whisper-large-v3-turbo"])
-        self.language = cfg.get("language", "en")
+        self.language = cfg.get("language") or "en"
         self.session = requests.Session()
         self._cooldown = {}
         self._recognizer = None
@@ -72,9 +70,6 @@ class Transcriber:
             if plain in HALLUCINATIONS and seconds < 3.5:
                 log.debug("Dropped likely hallucination %r", text)
                 return ""
-            if len(plain.split()) > 2 and plain in _plain(PROMPT):
-                log.debug("Dropped echo of the vocabulary hint %r", text)
-                return ""
             return text
         return ""
 
@@ -83,9 +78,8 @@ class Transcriber:
         for model in self.models:
             if self._cooldown.get(model, 0) > time.time():
                 continue
-            data = {"model": model, "response_format": "verbose_json", "temperature": "0", "prompt": PROMPT}
-            if self.language:
-                data["language"] = self.language
+            data = {"model": model, "response_format": "verbose_json", "temperature": "0",
+                    "language": self.language}
             r = self.session.post(GROQ_URL, headers={"Authorization": "Bearer " + self.key},
                                   files={"file": ("speech.wav", wav, "audio/wav")}, data=data, timeout=15)
             if r.status_code == 429:

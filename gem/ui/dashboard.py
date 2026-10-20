@@ -21,6 +21,7 @@ from ..skills import control
 from ..runtime import svc
 from ..state import ALWAYS_LISTENING, MODE_NAMES, PUSH_TO_TALK
 from . import theme as T
+from ..voices import PIPER_VOICES
 from .crystal import Crystal, render_image
 
 log = logging.getLogger("gem.dashboard")
@@ -312,7 +313,7 @@ class HomePage(Page):
         q = QHBoxLayout()
         self.quiet_buttons = [button("10 min", cb=lambda: actions.run("snooze", {"minutes": 10})),
                               button("1 hour", cb=lambda: actions.run("snooze", {"minutes": 60})),
-                              button("Until I say", cb=lambda: control.ruhig())]
+                              button("Until I say", cb=lambda: control.quiet_until_resumed())]
         self.resume_button = button("Resume", "Primary", cb=lambda: actions.run("resume"))
         for b in self.quiet_buttons + [self.resume_button]:
             q.addWidget(b)
@@ -878,8 +879,11 @@ VOICES = [("Ava (US, natural)", "en-US-AvaMultilingualNeural"), ("Emma (US)", "e
 FIELDS = [
     ("You", "Your name", "user_name", "text", None, False),
     ("You", "Home city (weather, briefings)", "home_city", "text", None, False),
-    ("Voice", "Voice", "voice.edge_voice", "choice", VOICES, False),
-    ("Voice", "Engine", "voice.engine", "choice", [("Natural (online)", "edge"), ("Windows (offline)", "sapi")], False),
+    ("Voice", "Engine", "voice.engine", "choice", [("On this PC: instant, same voice always", "piper"),
+                                                  ("Online Microsoft voices: richer, can lag", "edge"),
+                                                  ("Old Windows voices", "sapi")], False),
+    ("Voice", "Voice on this PC", "voice.piper_voice", "choice", PIPER_VOICES, False),
+    ("Voice", "Online voice", "voice.edge_voice", "choice", VOICES, False),
     ("Voice", "Speed", "voice.rate", "choice", [("Slower", "-10%"), ("Normal", "+0%"), ("A bit faster", "+5%"),
                                                 ("Faster", "+15%"), ("Fastest", "+25%")], False),
     ("Voice", "Volume", "voice.volume", "slider", (30, 100), False),
@@ -897,8 +901,6 @@ FIELDS = [
     ("Listening", "Microphone", "listening.input_device", "mic", None, True),
     ("Listening", "Speech detection strictness", "listening.vad_aggressiveness", "choice",
      [("Relaxed", 1), ("Normal", 2), ("Strict (noisy rooms)", 3)], True),
-    ("Listening", "Language", "stt.language", "choice", [("English", "en"), ("German", "de"), ("Hindi", "hi"),
-                                                         ("Auto-detect", "")], True),
     ("Listening", "Detect calls automatically", "calls.auto_detect", "bool", None, True),
     ("Keys", "Hold time before Caps Lock counts as held (ms)", "keys.hold_ms", "int", (120, 600), True),
     ("Keys", "Triple-tap window (ms)", "keys.triple_tap_ms", "int", (400, 1500), True),
@@ -1006,8 +1008,8 @@ class SettingsPage(Page):
             w = self._make(kind, opts)
             self.widgets[path] = (kind, w, restart)
             row.addWidget(w)
-            if path == "voice.edge_voice":
-                row.addWidget(button("Test", cb=self._test_voice))
+            if path in ("voice.piper_voice", "voice.edge_voice"):
+                row.addWidget(button("Test", cb=lambda _=False, p=path: self._test_voice(p)))
             sections[section].addLayout(row)
 
         f, lay = card_frame()
@@ -1149,17 +1151,18 @@ class SettingsPage(Page):
             log.error("Startup toggle failed: %s", e)
         self.note.setText("Saved. Restart Gem to apply the ↻ changes." if restart else "Saved.")
 
-    def _test_voice(self):
+    def _test_voice(self, path):
+        """Use the chosen voice right away (Save keeps it) and say a sample once it's ready."""
         if not svc.voice:
             return
         cfg = svc.voice.cfg
-        before = dict(cfg)
-        for path in ("voice.edge_voice", "voice.rate", "voice.engine", "voice.volume"):
-            kind, w, _ = self.widgets[path]
-            key = path.split(".")[1]
-            cfg[key] = round(w.value() / 100.0, 2) if kind == "slider" else w.currentData()
-        svc.voice.say("Hi, I'm Gem. This is how I sound.")
-        QTimer.singleShot(200, lambda: cfg.update(before))
+        for p in ("voice.piper_voice", "voice.edge_voice", "voice.rate", "voice.volume"):
+            kind, w, _ = self.widgets[p]
+            cfg[p.split(".")[1]] = round(w.value() / 100.0, 2) if kind == "slider" else w.currentData()
+        cfg["engine"] = "piper" if path == "voice.piper_voice" else "edge"
+        self.widgets["voice.engine"][1].setCurrentIndex(self.widgets["voice.engine"][1].findData(cfg["engine"]))
+        self.note.setText("Loading the voice…" if cfg["engine"] == "piper" else "")
+        svc.voice.preview("Hi, I'm Gem. This is how I sound.")
 
     def _restart(self):
         self._save()

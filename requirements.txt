@@ -4,8 +4,9 @@ numpy
 PyAudio
 webrtcvad-wheels
 SpeechRecognition
+piper-tts
+miniaudio
 edge-tts
-pygame
 psutil
 wikipedia
 keyboard

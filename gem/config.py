@@ -67,8 +67,12 @@ DEFAULTS = {
     "lights": {"enabled": True, "animate": True, "flash_on_alerts": True},
 
     "voice": {
-        "engine": "edge",                     # "edge" (natural, online) or "sapi" (offline)
+        # "piper" (on this PC: instant, same voice every time), "edge" (online Microsoft voices, can lag)
+        # or "sapi" (the old Windows voices).
+        "engine": "piper",
+        "piper_voice": "en_US-lessac-medium",
         "edge_voice": "en-US-AvaMultilingualNeural",
+        "sapi_voice": "Zira",
         "rate": "+5%",
         "volume": 0.9,
         "speak_in_calls": False,
@@ -189,18 +193,6 @@ DEFAULTS = {
         "open_url": "https://mail.google.com",
     },
 
-    # Whole-utterance control words. They work in every mode. The odd entries
-    # are common mis-hearings of the German words.
-    "control_words": {
-        "quit": ["schluss", "shluss", "schlus", "shloos", "shoes", "sleeves", "sleeve"],
-        "lock": ["sperren", "shperren", "sparren", "sparen", "sparring", "sperm",
-                 "sparrow", "sperrung", "sparing", "sprain", "spurn"],
-        "ruhig": ["ruhig", "rooky", "rookie", "rocky", "roomy", "ruby", "rohit", "ronak",
-                  "rowdy", "juhi", "judy", "julie", "rui", "ruhi", "roohi", "rudy", "ruki", "rubik"],
-        "weiter": ["weiter", "viter", "fighter", "writer", "lighter", "wider", "waiter",
-                   "wither", "whiter"],
-    },
-
     "screenshot_dir": "",      # blank = Desktop
 
     "appearance": {
@@ -253,6 +245,21 @@ def load_settings():
             log.error("Could not create settings file: %s", e)
         return copy.deepcopy(DEFAULTS)
     user = _read_json(SETTINGS_FILE, {})
+    changed = False
+    voice = user.get("voice") or {}
+    if voice and "piper_voice" not in voice:
+        # Written before the local voice existed: move to it (the online voice lagged and switched voices).
+        voice["engine"] = "piper"
+        changed = True
+    for old in ("control_words", "overlay"):
+        if old in user:
+            user.pop(old)
+            changed = True
+    if changed:
+        try:
+            _write_json(SETTINGS_FILE, user)
+        except Exception as e:
+            log.error("Could not update settings file: %s", e)
     merged = _deep_merge(DEFAULTS, user)
     # App/site/process maps merge key-by-key so new defaults still appear.
     for key in ("apps", "processes", "websites"):

@@ -5,20 +5,31 @@ Gem runs common commands instantly on your PC and uses Groq's free AI models for
 
 ## How it looks
 
-Gem lives at the **top centre of your screen** and only appears when she's needed:
+Gem lives in a **Dynamic Island**: a small black pill hugging the very top of your screen, like on an iPhone.
 
-- **The crystal**: Gem's faceted eye. It assembles when Gem starts, opens up and follows your voice while you
-  talk, swirls while thinking, sends out rings while speaking, sleeps during quiet time and glitches in Ruhig.
-- **Answer cards**: frosted cards under the crystal: weather with icons, timers with a live countdown ring,
-  to-do checklists, your schedule, PC gauges, now playing, volume, reminders, the morning briefing, screenshots.
-- **Screen-edge glow**: the edges of the screen glow while you hold Caps Lock to talk.
+- **Idle**: a tiny pill with Gem's crystal. Clicks pass straight through it to whatever is underneath; rest the
+  mouse on it for a moment to make it clickable (click to type, right-click for a menu). It tucks itself away
+  during fullscreen video and games.
+- **Live activities**: a running timer counts down in the pill; it also shows focus time left, the song playing
+  in Spotify, and when you're on a call or Gem is in quiet time.
+- **Listening**: while you hold Caps Lock the island widens with a live waveform of your voice and a violet glow.
+- **Answers**: the island opens into a card: weather with icons, timers with a countdown ring, to-do
+  checklists, your schedule, PC gauges, now playing, volume, reminders, the morning briefing, web answers with
+  sources, routines and screenshots. The card appears the moment Gem starts speaking.
 - **Sound cues**: soft tones when listening starts and stops, gentle bells for reminders and alarms.
   All silent during calls, quiet time and gaming.
 - **The Gem window**: left-click the tray icon, or say "open your settings" / "open dashboard". It has Home
-  (status, quick switches, up next, recent), Reminders, Classes, To-do, Notes, Memory, History and Settings,
-  so you never have to edit JSON.
+  (status, quick switches, up next, recent), Reminders, Classes, To-do, Routines, Notes, Memory, History and
+  Settings, so you never have to edit JSON.
 
-In always-listening mode a small crystal stays at the top as a reminder that the mic is live.
+In always-listening mode a small violet dot in the pill shows that the mic is live.
+
+### Gem's voice
+
+Gem speaks with a neural voice that runs **on your PC** (Piper). It starts within a fraction of a second,
+sounds the same every time and works offline; phrases she says often are cached and play instantly. The voice
+model (about 60 MB) downloads once on first run. Settings → Voice lets you pick another local voice or switch
+to the online Microsoft voices, which sound a little richer but can take a few seconds to start.
 
 ## Talking to Gem
 
@@ -43,8 +54,8 @@ in a sentence makes it certain. After she replies you have ~25 seconds for follo
 |---|---|
 | "shut up for a bit" / "be quiet" | Quiet for 10 minutes, then she comes back on her own |
 | "quiet for an hour" / "shut up for 30 minutes" | Custom length |
-| "I'm back" / "speak up" | End quiet time early |
-| **Ruhig** / **Weiter** | Quiet until you say Weiter |
+| "be quiet until I say" | Quiet until you say "I'm back" |
+| "I'm back" / "speak up" / "wake up" | End quiet time early |
 
 Push-to-talk always works, even during quiet time (replies show as text instead of voice).
 
@@ -61,8 +72,8 @@ Everything returns to normal when the call ends.
 
 ### Typing instead of talking
 
-Press **Ctrl + Alt + Space** (or click the crystal) to open a command bar and type a request. Handy in calls.
-Up and Down recall what you typed before. Right-click the crystal for a quick menu.
+Press **Ctrl + Alt + Space** (or rest the mouse on the island and click) to open a command bar and type a
+request. Handy in calls. Up and Down recall what you typed before. Right-click the island for a quick menu.
 
 ## What Gem can do
 
@@ -80,14 +91,16 @@ Up and Down recall what you typed before. Right-click the crystal for a quick me
 | Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
 | Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
-| Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to German", "write a reply" |
+| Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish", "write a reply" |
 | Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
+| Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
+| Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
 | Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
 
-Control words still work as before: **Sperren** locks the PC, **Schluss** closes Gem.
+To lock the PC say "lock my PC"; to close Gem say "close Gem" or use the tray.
 
 ## Setup
 
@@ -118,9 +131,10 @@ Everything lives in `C:\Users\<you>\.gem\` (tray icon → More → Data folder):
 
 | File | What |
 |---|---|
-| `settings.json` | All options, including a few not in the window (control words, call-detection ignore list) |
+| `settings.json` | All options, including a few not in the window (call-detection ignore list) |
 | `reminders.json` | Timers, alarms, reminders and the weekly class schedule (your old `gem_alarms.json` is imported on first run) |
-| `todo.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, notes, remembered facts, conversation history |
+| `todo.json`, `routines.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, routines, notes, remembered facts, conversation history |
+| `voices/`, `voice_cache/` | The local voice model and cached phrases |
 | `gem.log` | Log, useful if something doesn't work |
 
 Apps are found automatically from the Start Menu, so app updates (like Discord's) no longer break "open".
@@ -133,7 +147,7 @@ when one is rate-limited, and `whisper-large-v3-turbo` for speech. Change the or
 ### Panic hotkey
 
 `Ctrl + Alt + Shift + Tab + P` mutes the PC, closes the games listed in settings, shows the desktop, opens
-Gmail and hides Gem. Say **Weiter** (holding Caps Lock) or use the tray to bring her back. Voice phrases for
+Gmail and hides Gem. Hold Caps Lock and say "I'm back", or use the tray, to bring her back. Voice phrases for
 panic can be added under `"panic"` → `"voice_phrases"`.
 
 ## Building the EXE
@@ -143,8 +157,8 @@ pip install pyinstaller
 build.bat
 ```
 
-The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the voice detector). If you used to start Gem by copying the old exe into your Startup folder,
-delete that copy and use **Start with Windows** in the tray menu instead, so the old version doesn't start too.
+The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the voice detector). Turn on
+**Start with Windows** in the tray menu or Settings to launch it at sign-in.
 
 ## Privacy
 

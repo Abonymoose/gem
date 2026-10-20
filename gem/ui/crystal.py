@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPat
 
 from . import theme as T
 
-MOODS = ("launch", "idle", "listening", "muted", "thinking", "speaking", "sleeping", "glitch", "gaming", "alert", "mini")
+MOODS = ("launch", "idle", "listening", "muted", "thinking", "speaking", "sleeping", "gaming", "alert", "mini")
 
 # mood -> (open, eye, glow, sparkle rate)
 TARGETS = {
@@ -24,7 +24,6 @@ TARGETS = {
     "thinking": (0.38, 1.0, 0.5, 1.2),
     "speaking": (0.22, 1.0, 0.6, 0.8),
     "sleeping": (0.0, 0.0, 0.18, 0.3),
-    "glitch": (0.1, 0.6, 0.3, 0.0),
     "gaming": (0.05, 1.0, 0.35, 0.0),
     "alert": (0.5, 1.0, 0.85, 2.5),
 }
@@ -137,10 +136,7 @@ class Crystal:
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
         p.setOpacity(opacity)
-        if self.mood == "glitch":
-            self._draw_glitch(p, cx, cy, R)
-        else:
-            self._draw_all(p, cx, cy, R)
+        self._draw_all(p, cx, cy, R)
         p.restore()
 
     def _draw_all(self, p, cx, cy, R):
@@ -325,42 +321,6 @@ class Crystal:
             a = math.sin(math.pi * s["life"] / s["max"])
             p.setBrush(T.alpha(s["color"], 0.9 * a))
             p.drawPath(_star(cx + s["x"] * R, cy + s["y"] * R, s["size"] * R * (0.6 + 0.4 * a)))
-
-    def _draw_glitch(self, p, cx, cy, R):
-        size = int(R * 5)
-        img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
-        img.fill(Qt.transparent)
-        ip = QPainter(img)
-        ip.setRenderHint(QPainter.Antialiasing)
-        self._draw_all(ip, size / 2, size / 2, R)
-        ip.end()
-
-        def tinted(color):
-            t = QImage(img)
-            tp = QPainter(t)
-            tp.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            tp.fillRect(t.rect(), color)
-            tp.end()
-            return t
-
-        ox, oy = cx - size / 2, cy - size / 2
-        jitter = 2 + 2 * (int(self.t * 12) % 3 == 0)
-        p.setOpacity(p.opacity() * 0.55)
-        p.drawImage(QPointF(ox - jitter, oy), tinted(QColor(255, 60, 120)))
-        p.drawImage(QPointF(ox + jitter, oy), tinted(QColor(60, 200, 255)))
-        p.setOpacity(min(1.0, p.opacity() / 0.55))
-        rng = random.Random(int(self.t * 10))
-        y = 0
-        while y < size:
-            h = rng.randint(3, 9)
-            shift = rng.choice((0, 0, 0, rng.randint(-4, 4)))
-            p.drawImage(QRectF(ox + shift, oy + y, size, h), img, QRectF(0, y, size, h))
-            y += h
-        p.setPen(QPen(T.alpha(T.LAVENDER, 0.35), 1))
-        for k in range(3):
-            if (int(self.t * 20) + k * 7) % 9 < 5:
-                yy = cy - R + k * R * 0.9 + rng.uniform(-2, 2)
-                p.drawLine(QPointF(cx - R * 1.1, yy), QPointF(cx + R * 1.1, yy))
 
 
 def render_image(size, mood="idle", icon=True):

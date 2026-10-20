@@ -24,7 +24,7 @@ class State:
         self.thinking = False
         self.in_call = False
         self.call_app = ""
-        self.snoozed_until = 0.0     # epoch seconds; math.inf = until "Weiter"
+        self.snoozed_until = 0.0     # epoch seconds; math.inf = until you say "I'm back"
         self.gaming = False
         self.dictating = False
         self.focus_until = 0.0
@@ -62,7 +62,7 @@ class State:
         return time.time() < self.snoozed_until
 
     @property
-    def ruhig(self):
+    def quiet_indefinitely(self):
         return self.snoozed_until == math.inf
 
     @property
@@ -99,8 +99,8 @@ class State:
 
     def describe(self):
         parts = [MODE_NAMES[self.mode]]
-        if self.ruhig:
-            parts.append("Ruhig")
+        if self.quiet_indefinitely:
+            parts.append("quiet until you say I'm back")
         elif self.snoozed:
             parts.append("quiet until " + time.strftime("%H:%M", time.localtime(self.snoozed_until)))
         if self.in_call:

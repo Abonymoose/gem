@@ -93,6 +93,12 @@ def _rules():
         return deco
 
     # Quiet / resume / stop
+    @rule(r"^(?:be quiet|quiet|shut up|stay quiet|stop talking|go quiet|go to sleep|sleep|mute yourself)\s+"
+          r"(?:until i (?:say so|say|tell you|come back|am back|m back)|until i'm back|till i say(?: so)?|"
+          r"indefinitely|for now|for the rest of the day)$")
+    def _(m, t):
+        return Match("quiet_until_resumed")
+
     @rule(r"^(?:shut up|be quiet|quiet|stay quiet|keep quiet|stop talking|silence|shush|hush|zip it|pipe down|"
           r"mute yourself|don't talk|go to sleep|sleep|take a break|give me (?:a )?(?:minute|moment|second))\b(.*)$")
     def _(m, t):
@@ -124,7 +130,8 @@ def _rules():
     def _(m, t):
         return Match("set_mode", {"mode": "toggle"}, False)
 
-    @rule(r"^(?:start |begin |turn on |enable )?(?:gaming|game) mode(?: on)?$|^(?:let's game|lets game|time to game|"
+    @rule(r"^(?:start |begin |turn on |enable |enter |go into |activate )?(?:gaming|game) mode(?: on)?$|"
+          r"^(?:let's game|lets game|time to game|"
           r"game time|gaming time)$", safe=False)
     def _(m, t):
         return Match("gaming_mode", {"on": True}, False)

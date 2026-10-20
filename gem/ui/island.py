@@ -219,8 +219,6 @@ class Island(QWidget):
             return "speaking" if st.speaking else "idle"
         if st.gaming:
             return "gaming"
-        if st.ruhig:
-            return "glitch"
         if st.snoozed:
             return "sleeping"
         return "idle"
@@ -286,8 +284,8 @@ class Island(QWidget):
             if self._music:
                 act = {"kind": "music", "label": self._music, "value": ""}
         if act is None and st.snoozed:
-            until = "" if st.ruhig else time.strftime("%I:%M", time.localtime(st.snoozed_until)).lstrip("0")
-            act = {"kind": "quiet", "label": "Ruhig" if st.ruhig else "Quiet", "value": ("until " + until) if until else ""}
+            until = "" if st.quiet_indefinitely else time.strftime("%I:%M", time.localtime(st.snoozed_until)).lstrip("0")
+            act = {"kind": "quiet", "label": "Quiet", "value": ("until " + until) if until else "say I'm back"}
         if act is None and st.gaming:
             act = {"kind": "gaming", "label": "Gaming", "value": ""}
         if act and act["kind"] == "music":
