@@ -101,6 +101,14 @@ DEFAULTS = {
         "ignore_apps": ["python", "gem.exe", "gem2.exe"],
     },
 
+    # Only respond to your voice when always listening ("learn my voice", "only listen to me").
+    # threshold: how closely speech must match your voiceprint (0.38 relaxed, 0.45 normal, 0.52 strict).
+    "voice_lock": {
+        "threshold": 0.45,
+        "learn_from_push_to_talk": True,
+        "in_push_to_talk": False,
+    },
+
     # "Mute me" / "deafen me": must match Toggle Mute / Toggle Deafen in Discord's Keybinds settings.
     "discord": {
         "mute_keys": "ctrl+shift+m",

@@ -491,6 +491,8 @@ def _rules():
 
     @rule(r"^forget (?:that |about )?(.+)$", safe=False)
     def _(m, t):
+        if re.match(r"^my voice(?:print| profile)?$", m.group(1)):
+            return Match("voice_forget", {}, False)
         return Match("forget", {"about": m.group(1)}, False)
 
     # Focus and briefing
@@ -526,6 +528,34 @@ def _rules():
           r"(?: (today|tomorrow|tonight))?$")
     def _(m, t):
         return Match("weather", {"city": m.group(1), "when": "tomorrow" if m.group(2) == "tomorrow" else "today"})
+
+    # Voice lock
+    @rule(r"^(?:learn|train|memori[sz]e|recogni[sz]e|remember) (?:my voice|what i sound like|how i sound)$|"
+          r"^(?:re)?train (?:my )?voice(?: recognition| lock)?$|^voice training$|"
+          r"^set up (?:voice (?:recognition|lock|id)|my voice)$|^teach you my voice$")
+    def _(m, t):
+        return Match("voice_train")
+
+    @rule(r"^(?:only (?:listen|respond|reply) to me|only (?:listen|respond) to my voice|listen only to me|"
+          r"ignore (?:other|everyone else'?s?) (?:people|voices?)|ignore everyone else|"
+          r"(?:turn on|enable) voice (?:lock|recognition|id)|voice (?:lock|recognition|id) on)$")
+    def _(m, t):
+        return Match("voice_lock", {"on": True})
+
+    @rule(r"^(?:listen to (?:everyone|everybody|anyone)|respond to (?:everyone|everybody|anyone)|"
+          r"(?:turn off|disable) voice (?:lock|recognition|id)|voice (?:lock|recognition|id) off)$")
+    def _(m, t):
+        return Match("voice_lock", {"on": False})
+
+    @rule(r"^(?:do you know my voice|voice (?:check|status)|voice lock status|"
+          r"how (?:sure|confident) are you (?:it'?s|that'?s|that it'?s) me|was that me|did that sound like me|"
+          r"is voice lock on)$")
+    def _(m, t):
+        return Match("voice_status")
+
+    @rule(r"^(?:forget|delete|reset|erase) my voice(?:print| profile)?$", safe=False)
+    def _(m, t):
+        return Match("voice_forget", {}, False)
 
     # Gaming and PC
     @rule(r"^(?:(?:un)?mute|(?:un)?deafen) (?:me|myself|my mic(?:rophone)?)(?: (?:on|in) discord)?$|"

@@ -9,13 +9,13 @@ import threading
 import time
 from collections import deque
 
-from . import actions, router
+from . import actions, router, voiceprint
 from .audio import Utterance
 from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import routines, text as text_skill
+from .skills import routines, text as text_skill, voice_id
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -139,9 +139,13 @@ class Assistant:
         explicit = item.source in ("ptt", "typed")
         text = item.text
         if not text:
+            if self._voice_rejected(item):
+                return
             if explicit:
                 st.update(thinking=True)
             text = svc.stt.transcribe(item.audio)
+            if text and item.source == "ptt":
+                voice_id.learn_async(item.audio)
         if not text:
             if item.source == "ptt":
                 caption("I didn't catch that.", seconds=2.5)
@@ -169,6 +173,9 @@ class Assistant:
                     return self._respond(callback(), text, item.source, ["confirm"])
                 if plain in NO:
                     return self._respond("Okay, I won't.", text, item.source, [])
+
+        if voice_id.training_active() and item.audio and item.source in ("ptt", "open"):
+            return self._respond(voice_id.train_step(item.audio, plain), text, item.source, ["voice_train"])
 
         if st.dictating and (explicit or st.effective_mode == ALWAYS_LISTENING):
             result = text_skill.handle_dictation(text)
@@ -237,6 +244,24 @@ class Assistant:
         if not spoken and not names and explicit:
             spoken = "Sorry, I didn't get that."        # never leave a push-to-talk request hanging
         self._respond(spoken, text, item.source, names, card=cards[0] if cards else None)
+
+    @staticmethod
+    def _voice_rejected(item):
+        """Voice lock: speech that doesn't sound like you is dropped before it's even transcribed."""
+        if not item.audio or voice_id.training_active() or not voiceprint.locked():
+            return False
+        ptt = item.source == "ptt"
+        if item.source != "open" and not (ptt and voice_id.cfg().get("in_push_to_talk")):
+            return False
+        ok, sc = voiceprint.check(item.audio, voice_id.base_threshold())
+        if ok:
+            log.debug("Voice lock: sounds like you (%.2f)", sc)
+            return False
+        log.info("Voice lock: ignored speech that doesn't sound like you (%s)",
+                 "too short to tell" if sc is None else "%.2f" % sc)
+        if ptt:
+            caption("That didn't sound like you", seconds=2.5)
+        return True
 
     @staticmethod
     def _probably_chatter(norm):

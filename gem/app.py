@@ -207,6 +207,9 @@ def main():
     start_watcher()
     start_tracker()
     threading.Thread(target=_ensure_shortcut, name="shortcut", daemon=True).start()
+    from . import voiceprint
+    if (cfg.get("voice_lock") or {}).get("learn_from_push_to_talk", True) or voiceprint.store.data.get("locked"):
+        threading.Thread(target=voiceprint.prepare, name="voice-model", daemon=True).start()
     svc.assistant.start()
     svc.listener.start()
     svc.scheduler.start()

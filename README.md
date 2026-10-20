@@ -112,6 +112,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Your screen | "what's this error", "explain my screen", "summarize this page", "look at my screen and tell me what to click" (a screenshot goes to the vision model; Gem never clicks anything). "Explain this" with nothing selected also looks at the screen |
 | Tidy downloads | "clean up my downloads" sorts loose files into PDFs, Images, Installers and so on after you say yes. Only moves, never deletes. "Undo the tidy" puts everything back |
 | Gaming | "clip that" saves the last 30 seconds with Xbox Game Bar. "Mute me" and "deafen me" toggle Discord (keys under `discord` in settings). "Speed test" checks download, upload and ping |
+| Voice lock | "learn my voice" (read five short lines), then in always-listening mode Gem ignores speech that isn't you, before it's even transcribed. "Only listen to me" / "listen to everyone", "voice check", "forget my voice". Runs on this PC with a 26 MB WeSpeaker model; push-to-talk keeps improving your voiceprint. Strictness is under Listening in settings |
 | Picks | "what should I watch tonight", "what should I play", "recommend a funny movie": three picks based on your mood, what you've told Gem and the games you have installed |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |

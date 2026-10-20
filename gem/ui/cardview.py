@@ -202,7 +202,8 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT", "calc": "",
           "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": "",
           "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME",
-          "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED"}
+          "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED",
+          "voice": "VOICE TRAINING"}
 
 
 class CardContent:
@@ -257,6 +258,9 @@ class CardContent:
             label += " · " + c["name"].upper()
         if self.kind == "picks" and c.get("title"):
             label = c["title"].upper()
+        if self.kind == "voice":
+            label = "VOICE LOCK ON" if c.get("done") else "VOICE TRAINING · %d OF %d" % (c.get("step", 0) + 1,
+                                                                                     c.get("total", 5))
         return label
 
     def height(self, w):
@@ -316,6 +320,11 @@ class CardContent:
             return 54 + 30 * min(6, len(c.get("rows") or []))
         if k == "speed":
             return 80
+        if k == "voice":
+            if c.get("done"):
+                return _wrap_height(F_BODY, self.text, w) + 30
+            return (_wrap_height(F_SMALL, self.text, w) + 8 + _wrap_height(F_TITLE, "“%s”" % c.get("phrase", ""), w)
+                    + 14 + 18)
         if k == "picks":
             return sum(_PICK_TITLE_H + 2 + _wrap_height(F_SMALL, r.get("why", ""), w - 38) + 14
                        for r in (c.get("rows") or [])[:3]) - 4
@@ -864,6 +873,39 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.LAVENDER)
         p.drawText(QRectF(x, y + 56, w, 20), Qt.AlignLeft | Qt.AlignVCenter, c.get("verdict", ""))
+
+    def _paint_voice(self, p, x, y, w):
+        c = self.card
+        total, step = c.get("total", 5), c.get("step", 0)
+        if c.get("done"):
+            self._paint_text(p, x, y, w)
+            y += _wrap_height(F_BODY, self.text, w) + 12
+        else:
+            sh = _wrap_height(F_SMALL, self.text, w)
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y, w, sh + 2), Qt.TextWordWrap, self.text)
+            y += sh + 8
+            phrase = "“%s”" % c.get("phrase", "")
+            ph = _wrap_height(F_TITLE, phrase, w)
+            p.setFont(F_TITLE)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x, y, w, ph + 2), Qt.TextWordWrap, phrase)
+            y += ph + 14
+        # Progress: one dot per line, the current one pulsing.
+        pulse = 0.55 + 0.45 * math.sin(self.t * 5)
+        for i in range(total):
+            done = i < step
+            current = i == step and not c.get("done")
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.95) if done else T.alpha(T.LAVENDER, pulse) if current
+                       else T.alpha(T.SOFT, 0.18))
+            p.drawEllipse(QRectF(x + i * 16, y + 4, 9, 9))
+        if not c.get("done"):
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_FAINT)
+            p.drawText(QRectF(x + total * 16 + 8, y, w - total * 16 - 8, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                       c.get("hint", ""))
 
     def _paint_picks(self, p, x, y, w):
         for i, r in enumerate((self.card.get("rows") or [])[:3]):

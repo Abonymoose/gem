@@ -153,6 +153,8 @@ class Island(QWidget):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)
+        if kind == "voice":
+            seconds = 8.0 if (card or {}).get("done") else 45.0      # training: stay up while you read the line
         seconds *= float((svc.config.get("appearance") or {}).get("card_seconds", 1.0) or 1.0)
         self.card_until = time.monotonic() + seconds
         self.toast_until = 0.0
