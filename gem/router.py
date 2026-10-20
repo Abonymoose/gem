@@ -615,21 +615,29 @@ def _rules():
     def _(m, t):
         return Match("open_gem_settings", {}, False)
 
-    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history)$",
+    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history|routines)$",
           safe=False)
     def _(m, t):
-        page = "history" if "history" in m.group(1) else "home"
+        page = "history" if "history" in m.group(1) else "routines" if "routines" in m.group(1) else "home"
         return Match("open_dashboard", {"page": page}, False)
+
+    @rule(r"^(?:what routines do i have|list (?:my )?routines|my routines)$")
+    def _(m, t):
+        return Match("routine_list")
 
     # Web
     @rule(r"^(?:search wikipedia for|wikipedia)\s+(.+)$")
     def _(m, t):
         return Match("wikipedia", {"topic": m.group(1)})
 
-    @rule(r"^(?:search|google|look up|search for|search google for|search the web for|look up online)\s+"
-          r"(?:for\s+)?(.+)$", safe=False)
+    @rule(r"^(?:google|search google for|open results for|show me results for)\s+(?:for\s+)?(.+)$", safe=False)
     def _(m, t):
         return Match("web_search", {"query": m.group(1)}, False)
+
+    @rule(r"^(?:search|look up|search for|search the web for|look up online|find out|check online)\s+"
+          r"(?:for\s+)?(.+)$", safe=False)
+    def _(m, t):
+        return Match("web_answer", {"query": m.group(1)}, False)
 
     return R
 

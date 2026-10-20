@@ -1,5 +1,6 @@
-"""Web search, YouTube, Wikipedia and weather (Open-Meteo, no API key needed)."""
+"""Web answers and search, YouTube, Wikipedia and weather (Open-Meteo, no API key needed)."""
 import datetime
+import html as htmllib
 import logging
 import re
 import urllib.parse
@@ -14,15 +15,143 @@ from ..runtime import svc
 log = logging.getLogger("gem.web")
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                     "Chrome/126.0 Safari/537.36"}
+                     "Chrome/126.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9"}
 
 
-@action("web_search", "Google search in the browser, for live facts you can't know.", "query: str")
+@action("web_search", "Open search results in the browser (only when the user wants to see them).", "query: str")
 def web_search(query=""):
     if not query:
         raise ActionError("What should I search for?")
     webbrowser.open("https://www.google.com/search?q=" + urllib.parse.quote(query))
     return "Here are the results for %s." % query
+
+
+# ── Web answers ──────────────────────────────────────────────────────────────
+
+def _clean(fragment):
+    return re.sub(r"\s+", " ", htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
+
+
+_STOP = {"the", "and", "for", "what", "who", "when", "where", "which", "how", "does", "did", "was", "were", "are",
+         "is", "last", "latest", "today", "now", "current", "right", "tell", "about", "with", "this", "that", "from"}
+
+
+def _keywords(query):
+    return [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 1 and w not in _STOP]
+
+
+def _relevant(result, keywords):
+    text = (result["title"] + " " + result["snippet"]).lower()
+    hits = sum(1 for k in keywords if k in text)
+    return hits >= max(1, (len(keywords) + 1) // 2)
+
+
+def _bing_url(url):
+    """Bing wraps result links in a redirect with the real URL base64-encoded in `u`."""
+    url = htmllib.unescape(url)
+    u = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("u", [""])[0]
+    if u.startswith("a1"):
+        import base64
+        s = u[2:]
+        try:
+            return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "ignore")
+        except Exception:
+            pass
+    return url
+
+
+def _bing(query, limit=6):
+    out = []
+    try:
+        page = requests.get("https://www.bing.com/search", params={"q": query, "form": "QBLH"}, headers=_UA,
+                            timeout=6).text
+        for m in re.finditer(r'<li class="b_algo".*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></h2>(.*?)</li>',
+                             page, re.S):
+            snip = re.search(r"<p[^>]*>(.*?)</p>", m.group(3), re.S)
+            out.append({"title": _clean(m.group(2)), "url": _bing_url(m.group(1)),
+                        "snippet": _clean(snip.group(1)) if snip else ""})
+            if len(out) >= limit:
+                break
+    except Exception as e:
+        log.warning("Bing search failed: %s", e)
+    return out
+
+
+def _news(query, limit=6):
+    """Google News RSS: reliable, dated headlines for anything recent."""
+    out = []
+    try:
+        rss = requests.get("https://news.google.com/rss/search", headers=_UA, timeout=6,
+                           params={"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"}).text
+        for item in re.findall(r"<item>(.*?)</item>", rss, re.S)[:limit]:
+            title = re.search(r"<title>(.*?)</title>", item, re.S)
+            date = re.search(r"<pubDate>(.*?)</pubDate>", item, re.S)
+            source = re.search(r"<source[^>]*>(.*?)</source>", item, re.S)
+            link = re.search(r"<link>(.*?)</link>", item, re.S)
+            out.append({"title": _clean(title.group(1)) if title else "", "url": link.group(1) if link else "",
+                        "snippet": "", "date": date.group(1)[:16] if date else "",
+                        "source": _clean(source.group(1)) if source else ""})
+    except Exception as e:
+        log.warning("News search failed: %s", e)
+    return out
+
+
+def _search(query):
+    """Relevant web results first, then recent news."""
+    keywords = _keywords(query)
+    web = [r for r in _bing(query) if _relevant(r, keywords)]
+    return web, _news(query)
+
+
+def _page_text(url, limit=3000):
+    try:
+        r = requests.get(url, headers=_UA, timeout=5)
+        if "text/html" not in r.headers.get("content-type", ""):
+            return ""
+        body = re.sub(r"(?is)<(script|style|nav|footer|header|aside)[^>]*>.*?</\1>", " ", r.text)
+        paras = [_clean(p) for p in re.findall(r"(?is)<p[^>]*>(.*?)</p>", body)]
+        return " ".join(p for p in paras if len(p) > 40)[:limit]
+    except Exception:
+        return ""
+
+
+def _domain(url):
+    host = urllib.parse.urlparse(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+@action("web_answer", "Search the web and answer out loud. Use for news, scores, prices, recent events and other "
+        "live facts.", "query: str")
+def web_answer(query="", q="", question="", text="", topic=""):
+    query = (query or q or question or text or topic or "").strip()
+    if not query:
+        raise ActionError("What should I look up?")
+    web, news = _search(query)
+    if not web and not news:
+        return web_search(query)
+    lines = []
+    if web:
+        lines.append("Web results:")
+        lines += ["- %s (%s): %s" % (r["title"], _domain(r["url"]), r["snippet"]) for r in web]
+        top = next((r for r in web if not re.search(r"youtube\.com|\.pdf$", r["url"])), None)
+        page = _page_text(top["url"]) if top else ""
+        if page:
+            lines.append("\nFrom %s:\n%s" % (_domain(top["url"]), page))
+    if news:
+        lines.append("\nRecent news headlines:")
+        lines += ["- %s (%s)" % (r["title"], r["date"]) for r in news]
+    instruction = ("Today is %s. Answer the user's question for someone listening, in one or two short plain "
+                   "sentences, using only the search results below; prefer the most recent information. Mention "
+                   "the source only if it helps. No citation marks or brackets. If the results don't answer it, "
+                   "say you couldn't find a clear answer." % datetime.date.today().strftime("%A, %B %d, %Y"))
+    answer = svc.brain.complete(instruction, "Question: %s\n\n%s" % (query, "\n".join(lines)), max_tokens=220)
+    answer = re.sub(r"\s*(【[^】]*】|\[\d+(?:,\s*\d+)*\])", "", answer).strip()
+    sources = []
+    for r in web + news:
+        d = r.get("source") or _domain(r["url"])
+        if d and d not in sources and "news.google" not in d:
+            sources.append(d)
+    return card("web", answer, query=query, sources=sources[:3])
 
 
 @action("youtube", "Play the top YouTube result.", "query: str")

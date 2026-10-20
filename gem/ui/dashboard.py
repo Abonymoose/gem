@@ -324,7 +324,7 @@ class HomePage(Page):
         f, lay = card_frame()
         lay.addWidget(label("QUICK SWITCHES", "Section"))
         self.switches = {}
-        for key, name in (("voice", "Spoken replies"), ("gaming", "Gaming mode"), ("glow", "Screen-edge glow"),
+        for key, name in (("voice", "Spoken replies"), ("gaming", "Gaming mode"), ("island", "Island when idle"),
                           ("cues", "Sound cues")):
             row = QHBoxLayout()
             row.addWidget(label(name))
@@ -363,8 +363,8 @@ class HomePage(Page):
             actions.run("voice_replies", {"on": on})
         elif key == "gaming":
             actions.run("gaming_mode", {"on": on})
-        elif key == "glow":
-            cfg.setdefault("appearance", {})["edge_glow"] = on
+        elif key == "island":
+            cfg.setdefault("appearance", {})["island_when_idle"] = on
             Dashboard.save_settings()
         elif key == "cues":
             cfg.setdefault("sounds", {})["cues"] = on
@@ -391,7 +391,7 @@ class HomePage(Page):
             b.setChecked(b.mode == st.mode)
         self.switches["voice"].setChecked(st.voice_enabled)
         self.switches["gaming"].setChecked(st.gaming)
-        self.switches["glow"].setChecked((svc.config.get("appearance") or {}).get("edge_glow", True))
+        self.switches["island"].setChecked((svc.config.get("appearance") or {}).get("island_when_idle", True))
         self.switches["cues"].setChecked((svc.config.get("sounds") or {}).get("cues", True))
         for b in self.quiet_buttons:
             b.setVisible(not st.snoozed)
@@ -659,6 +659,98 @@ class TodoPage(Page):
         self._loading = False
 
 
+class RoutinesPage(Page):
+    title = "Routines"
+
+    def __init__(self):
+        super().__init__()
+        self.root.addWidget(label("One phrase runs a list of commands, written the way you'd say them. You can also "
+                                  "say: “create a routine called wind down that pauses the music and turns on "
+                                  "dark mode”.", "Muted", wrap=True))
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        left = QVBoxLayout()
+        self.list = QListWidget()
+        self.list.setFixedWidth(230)
+        self.list.currentRowChanged.connect(self._select)
+        left.addWidget(self.list, 1)
+        left.addWidget(button("New routine", cb=self._new))
+        body.addLayout(left)
+
+        f, lay = card_frame()
+        lay.addWidget(label("NAME", "Section"))
+        self.name = QLineEdit(placeholderText="e.g. study mode")
+        lay.addWidget(self.name)
+        lay.addWidget(label("ALSO TRIGGERED BY", "Section"))
+        self.phrases = QLineEdit(placeholderText="comma separated, e.g. time to study, start studying")
+        lay.addWidget(self.phrases)
+        lay.addWidget(label("STEPS, ONE PER LINE", "Section"))
+        self.steps = QPlainTextEdit()
+        self.steps.setPlaceholderText("close fortnite\nopen google classroom\nstart a focus session")
+        lay.addWidget(self.steps, 1)
+        row = QHBoxLayout()
+        self.feedback = label("", "Faint")
+        row.addWidget(self.feedback, 1)
+        row.addWidget(button("Delete", "Danger", self._delete))
+        row.addWidget(button("Run now", cb=self._run))
+        row.addWidget(button("Save", "Primary", self._save))
+        lay.addLayout(row)
+        body.addWidget(f, 1)
+        self.root.addLayout(body, 1)
+        self._routines = []
+
+    def refresh(self):
+        from ..skills import routines
+        current = self.name.text().strip().lower()
+        self._routines = routines.all_routines()
+        self.list.blockSignals(True)
+        self.list.clear()
+        for r in self._routines:
+            self.list.addItem(r["name"].capitalize())
+        self.list.blockSignals(False)
+        names = [r["name"] for r in self._routines]
+        if current in names:
+            self.list.setCurrentRow(names.index(current))
+        elif self._routines:
+            self.list.setCurrentRow(0)
+        else:
+            self._new()
+
+    def _select(self, row):
+        if 0 <= row < len(self._routines):
+            r = self._routines[row]
+            self.name.setText(r["name"])
+            self.phrases.setText(", ".join(r.get("phrases", [])))
+            self.steps.setPlainText("\n".join(r.get("steps", [])))
+            self.feedback.setText("")
+
+    def _new(self):
+        self.list.clearSelection()
+        self.name.clear()
+        self.phrases.clear()
+        self.steps.clear()
+        self.name.setFocus()
+
+    def _save(self):
+        steps = [l.strip() for l in self.steps.toPlainText().splitlines() if l.strip()]
+        phrases = [p.strip() for p in self.phrases.text().split(",") if p.strip()]
+        res = actions.run("routine_create", {"name": self.name.text(), "steps": steps, "phrases": phrases})
+        self.feedback.setText(str(res or ""))
+        self.refresh()
+
+    def _delete(self):
+        if self.name.text().strip():
+            self.feedback.setText(str(actions.run("routine_delete", {"name": self.name.text()}) or ""))
+            self._new()
+            self.refresh()
+
+    def _run(self):
+        name = self.name.text().strip()
+        if name and svc.assistant:
+            svc.assistant.submit_text("run " + name)
+            self.feedback.setText("Running %s…" % name)
+
+
 class NotesPage(Page):
     title = "Notes"
 
@@ -793,8 +885,8 @@ FIELDS = [
     ("Voice", "Volume", "voice.volume", "slider", (30, 100), False),
     ("Voice", "Speak during calls", "voice.speak_in_calls", "bool", None, False),
     ("Voice", "Speak in gaming mode", "voice.speak_in_gaming", "bool", None, False),
-    ("Look & sound", "Screen-edge glow while talking", "appearance.edge_glow", "bool", None, False),
-    ("Look & sound", "Small crystal while always listening", "appearance.mini_crystal_when_listening", "bool", None, False),
+    ("Look & sound", "Show the island when Gem is idle", "appearance.island_when_idle", "bool", None, False),
+    ("Look & sound", "Hide the island in fullscreen video and games", "appearance.hide_in_fullscreen", "bool", None, False),
     ("Look & sound", "How long answers stay on screen", "appearance.card_seconds", "choice",
      [("Short", 0.7), ("Normal", 1.0), ("Long", 1.5), ("Extra long", 2.2)], False),
     ("Look & sound", "Sound cues when listening starts and stops", "sounds.cues", "bool", None, False),
@@ -1079,7 +1171,8 @@ class SettingsPage(Page):
 
 class Dashboard(QMainWindow):
     PAGES = [("home", "Home", HomePage), ("reminders", "Reminders", RemindersPage), ("classes", "Classes", ClassesPage),
-             ("todo", "To-do", TodoPage), ("notes", "Notes", NotesPage), ("memory", "Memory", MemoryPage),
+             ("todo", "To-do", TodoPage), ("routines", "Routines", RoutinesPage), ("notes", "Notes", NotesPage),
+             ("memory", "Memory", MemoryPage),
              ("history", "History", HistoryPage), ("settings", "Settings", SettingsPage)]
 
     def __init__(self, overlay):

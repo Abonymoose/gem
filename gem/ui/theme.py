@@ -18,8 +18,11 @@ TEXT = QColor(240, 234, 252)
 TEXT_DIM = QColor(176, 160, 206)
 TEXT_FAINT = QColor(132, 116, 164)
 
-# Edge glow gradient stops (cycled).
+# Island glow / waveform gradient stops (cycled).
 GLOW = [QColor(139, 92, 246), QColor(236, 72, 153), QColor(96, 165, 250), QColor(196, 160, 240)]
+
+ISLAND = QColor(0, 0, 0, 252)
+ISLAND_EDGE = QColor(255, 255, 255, 16)
 
 FAMILY = "Segoe UI"
 

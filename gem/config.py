@@ -204,8 +204,8 @@ DEFAULTS = {
     "screenshot_dir": "",      # blank = Desktop
 
     "appearance": {
-        "edge_glow": True,                    # screen edges glow while you hold Caps Lock
-        "mini_crystal_when_listening": True,  # small crystal at the top while always-listening
+        "island_when_idle": True,             # keep the tiny pill at the top when nothing is happening
+        "hide_in_fullscreen": True,           # tuck it away during fullscreen video and games
         "card_seconds": 1.0,                  # multiplier for how long answers stay on screen
     },
 
@@ -261,12 +261,18 @@ def load_settings():
 
 
 class JsonStore:
-    """A small thread-safe JSON document in the data folder."""
+    """A small thread-safe JSON document in the data folder.
+
+    `with store as data:` locks it and writes it back afterwards, but only if
+    something actually changed, so frequent reads don't touch the disk.
+    """
 
     def __init__(self, name, default):
         self.path = os.path.join(DATA_DIR, name)
         self._lock = threading.RLock()
         self.data = _read_json(self.path, copy.deepcopy(default))
+        self._depth = 0
+        self._before = None
 
     def save(self):
         with self._lock:
@@ -277,11 +283,15 @@ class JsonStore:
 
     def __enter__(self):
         self._lock.acquire()
+        if self._depth == 0:
+            self._before = json.dumps(self.data, sort_keys=True)
+        self._depth += 1
         return self.data
 
     def __exit__(self, *exc):
         try:
-            if exc[0] is None:
+            self._depth -= 1
+            if self._depth == 0 and exc[0] is None and json.dumps(self.data, sort_keys=True) != self._before:
                 self.save()
         finally:
             self._lock.release()

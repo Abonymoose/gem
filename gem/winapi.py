@@ -274,6 +274,34 @@ def window_rect_physical(hwnd):
     return rect.left, rect.top, rect.right, rect.bottom
 
 
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT), ("dwFlags", wt.DWORD)]
+
+
+user32.MonitorFromWindow.restype = wt.HANDLE
+user32.MonitorFromWindow.argtypes = [wt.HWND, wt.DWORD]
+user32.GetMonitorInfoW.argtypes = [wt.HANDLE, ctypes.POINTER(MONITORINFO)]
+user32.GetClassNameW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
+
+
+def foreground_is_fullscreen(ignore_pid=None):
+    """True when the window in front covers its whole monitor (video, games)."""
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd or (ignore_pid and window_pid(hwnd) == ignore_pid):
+        return False
+    cls = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(hwnd, cls, 64)
+    if cls.value in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+        return False
+    info = MONITORINFO(ctypes.sizeof(MONITORINFO))
+    if not user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 2), ctypes.byref(info)):
+        return False
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    m = info.rcMonitor
+    return rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
+
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
 class LASTINPUTINFO(ctypes.Structure):

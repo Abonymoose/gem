@@ -31,7 +31,7 @@ Style: calm, friendly, professional, brief. No sarcasm or filler. Replies are sp
 Reply with JSON only: {{"addressed": true, "actions": [{{"name": "...", "args": {{}}}}], "reply": "", "continue": false}}
 - addressed: true for push-to-talk and typed input. In always-listening mode set false (and nothing else) if the speech isn't for you: talking to others, calls, media audio, thinking aloud, fragments, vague remarks ("let's improve", "that's cool"). Only clear requests or questions an assistant could act on, or mentions of Gem, are addressed. A recent reply makes a follow-up likely only if it clearly continues that exchange. If unsure, false.
 - actions: in order, only from the list. They announce their own results, so leave reply "" when you use them unless you must add something.
-- reply: answer questions from your knowledge. Prefer a fitting action (e.g. weather) over web_search, which is only for live facts you can't know. If something essential is missing, ask one short question.
+- reply: answer questions from your knowledge. For live or recent facts you can't know (news, scores, prices, schedules), use web_answer. Prefer a fitting action (e.g. weather) over it; web_search only opens results in the browser. If something essential is missing, ask one short question.
 - continue: true only if you need the action results to finish (e.g. check weather, then advise). You'll get them.
 
 Actions:
@@ -71,6 +71,9 @@ def _clean_plan(raw, source):
     cont = bool(raw.get("continue")) and bool(acts)
     # Actions confirm themselves; drop a bare "Done." / "Class added." on top.
     if acts and not cont and reply and "?" not in reply and len(reply.split()) <= 5:
+        reply = ""
+    # A web answer speaks for itself; the model's own guess would be stale.
+    if any(a["name"] == "web_answer" for a in acts):
         reply = ""
     return {
         "addressed": addressed,

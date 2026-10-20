@@ -363,16 +363,17 @@ class Crystal:
                 p.drawLine(QPointF(cx - R * 1.1, yy), QPointF(cx + R * 1.1, yy))
 
 
-def render_image(size, mood="idle"):
-    """A static crystal image (tray icon, window icons)."""
+def render_image(size, mood="idle", icon=True):
+    """A static crystal image. icon=True fills the square with no glow (exe, tray and window icons)."""
     c = Crystal()
     c.assemble = 1.0
     c.mood = mood
+    c.look = [0.15, 0.1]
     o, e, g, _ = TARGETS[mood]
-    c.open, c.eye, c.glow = o, e, g * 0.6
+    c.open, c.eye, c.glow = (0.0, e, 0.0) if icon else (o, e, g * 0.6)
     img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
     img.fill(Qt.transparent)
     p = QPainter(img)
-    c.draw(p, size / 2, size / 2, size * 0.36)
+    c.draw(p, size / 2, size / 2 + (size * 0.01 if icon else 0), size * (0.47 if icon else 0.36))
     p.end()
     return img

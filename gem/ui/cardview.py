@@ -1,4 +1,4 @@
-"""The frosted answer card under the crystal.
+"""Answer card content, drawn inside the island when it opens up.
 
 Every kind of card has a height function and a paint function. Live pieces
 (timer rings, typing dots, equalizer bars) animate because the overlay
@@ -12,14 +12,9 @@ import time
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetrics, QImage, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPolygonF, QRadialGradient)
-from PySide6.QtWidgets import QWidget
 
 from . import theme as T
 
-WIDTH = 460
-PAD = 20
-MARGIN = 24         # room for the shadow
-RADIUS = 22
 
 F_LABEL = T.font(11, QFont.DemiBold)
 F_LABEL.setLetterSpacing(QFont.AbsoluteSpacing, 1.3)
@@ -203,23 +198,18 @@ def draw_ring(p, cx, cy, r, progress, width, colors=None, track=None):
 LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "ALARM", "timers": "TIMERS & REMINDERS",
           "todo": "TO-DO", "music": "NOW PLAYING", "system": "THIS PC", "schedule": "SCHEDULE", "volume": "VOLUME",
           "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
-          "pending": ""}
+          "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE"}
 
 
-class CardView(QWidget):
+class CardContent:
+    """What goes inside the island when it opens up: your words, a label and the card body."""
+
     def __init__(self):
-        super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool |
-                         Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.you = ""
         self.text = ""
         self.card = None
-        self.opacity = 0.0
-        self.slide = 0.0
         self._image = None
         self.t = 0.0
-        self.resize(WIDTH + MARGIN * 2, 120)
 
     # ── Content ──────────────────────────────────────────────────────────────
 
@@ -235,8 +225,6 @@ class CardView(QWidget):
         if self.card and self.card.get("kind") == "image":
             path = self.card.get("path")
             self._image = QImage(path) if path and os.path.exists(path) else None
-        self.resize(WIDTH + MARGIN * 2, int(self._content_height() + PAD * 2 + MARGIN * 2))
-        self.update()
 
     @property
     def kind(self):
@@ -255,10 +243,12 @@ class CardView(QWidget):
             label = (c.get("title") or "Alarm").upper()
         if self.kind == "focus" and c.get("phase") == "break":
             label = "BREAK"
+        if self.kind == "routine" and c.get("name"):
+            label += " · " + c["name"].upper()
         return label
 
-    def _content_height(self):
-        w = WIDTH - PAD * 2
+    def height(self, w):
+        """Height of the content when laid out `w` pixels wide."""
         h = 0
         if self.you:
             h += _wrap_height(F_YOU, "“%s”" % self.you, w, max_lines=2) + 10
@@ -304,39 +294,18 @@ class CardView(QWidget):
             return min(220, int(w * self._image.height() / max(1, self._image.width()))) + 26
         if k == "confirm":
             return _wrap_height(F_BODY, self.text, w) + 40
+        if k == "web":
+            return _wrap_height(F_BODY, self.text, w) + (36 if c.get("sources") else 0)
+        if k == "routine":
+            return 28 * min(8, len(c.get("steps") or [])) + _wrap_height(F_SMALL, self.text, w) + 10
         return _wrap_height(F_BODY, self.text, w)
 
     # ── Painting ─────────────────────────────────────────────────────────────
 
-    def paintEvent(self, _):
-        if self.opacity <= 0.01:
-            return
-        p = QPainter(self)
+    def paint(self, p, x, y, w, t):
+        self.t = t
         p.setRenderHint(QPainter.Antialiasing)
         p.setRenderHint(QPainter.TextAntialiasing)
-        p.setOpacity(self.opacity)
-        p.translate(0, -self.slide)
-        box = QRectF(MARGIN, MARGIN, WIDTH, self.height() - MARGIN * 2)
-
-        for i in range(10):          # soft shadow
-            r = box.adjusted(-i * 1.6, -i * 1.2 + 4, i * 1.6, i * 2.2 + 4)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(0, 0, 0, int(16 * (1 - i / 10))))
-            p.drawRoundedRect(r, RADIUS + i, RADIUS + i)
-        g = QLinearGradient(box.topLeft(), box.bottomLeft())
-        g.setColorAt(0, T.CARD_TOP)
-        g.setColorAt(1, T.CARD_BOTTOM)
-        p.setBrush(g)
-        p.setPen(QPen(T.CARD_BORDER, 1))
-        p.drawRoundedRect(box, RADIUS, RADIUS)
-        hl = QLinearGradient(box.topLeft(), QPointF(box.left(), box.top() + 40))
-        hl.setColorAt(0, QColor(255, 255, 255, 18))
-        hl.setColorAt(1, QColor(255, 255, 255, 0))
-        p.setPen(Qt.NoPen)
-        p.setBrush(hl)
-        p.drawRoundedRect(box.adjusted(1, 1, -1, -1), RADIUS - 1, RADIUS - 1)
-
-        x, y, w = box.left() + PAD, box.top() + PAD, WIDTH - PAD * 2
         if self.you:
             p.setFont(F_YOU)
             p.setPen(T.TEXT_FAINT)
@@ -351,7 +320,6 @@ class CardView(QWidget):
             p.drawText(QRectF(x, y, w, lh), Qt.AlignLeft | Qt.AlignVCenter, label)
             y += lh + 10
         getattr(self, "_paint_" + self.kind, self._paint_text)(p, x, y, w)
-        p.end()
 
     def _paint_text(self, p, x, y, w):
         p.setFont(F_BODY)
@@ -652,3 +620,43 @@ class CardView(QWidget):
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_FAINT)
         p.drawText(QRectF(cx + 6, y + th + 10, w - cx, 26), Qt.AlignLeft | Qt.AlignVCenter, "Just say yes or no")
+
+    def _paint_web(self, p, x, y, w):
+        self._paint_text(p, x, y, w)
+        sources = self.card.get("sources") or []
+        if not sources:
+            return
+        cy = y + _wrap_height(F_BODY, self.text, w) + 12
+        cx = x
+        p.setFont(T.font(11, QFont.DemiBold))
+        fm = QFontMetrics(p.font())
+        for s in sources:
+            tw = fm.horizontalAdvance(s) + 20
+            if cx + tw > x + w:
+                break
+            r = QRectF(cx, cy, tw, 22)
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.SOFT, 0.14))
+            p.drawRoundedRect(r, 11, 11)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(r, Qt.AlignCenter, s)
+            cx += tw + 8
+
+    def _paint_routine(self, p, x, y, w):
+        steps = (self.card.get("steps") or [])[:8]
+        for i, st in enumerate(steps):
+            yy = y + i * 28
+            if st.get("ok"):
+                draw_check(p, x, yy + 3, 18, True)
+            else:
+                p.setPen(QPen(QColor(248, 113, 113), 2, Qt.SolidLine, Qt.RoundCap))
+                p.drawLine(QPointF(x + 5, yy + 8), QPointF(x + 13, yy + 16))
+                p.drawLine(QPointF(x + 13, yy + 8), QPointF(x + 5, yy + 16))
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT if st.get("ok") else T.TEXT_DIM)
+            p.drawText(QRectF(x + 30, yy, w - 30, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(st.get("text", "").capitalize(), Qt.ElideRight, int(w - 30)))
+        ty = y + len(steps) * 28 + 6
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, ty, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)

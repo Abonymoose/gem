@@ -15,7 +15,7 @@ from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import control, text as text_skill
+from .skills import control, routines, text as text_skill
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -68,6 +68,22 @@ class Assistant:
         self._pending = (callback, time.time() + timeout)
         say(question, card={"kind": "confirm"})
         svc.state.update(last_reply_at=time.time())
+
+    def execute(self, command):
+        """Run one command without speaking (routine steps). Returns (worked, results)."""
+        norm, _ = router.normalize(command)
+        m = router.match(norm, command) if norm else None
+        try:
+            if m:
+                res = actions.run(m.action, m.args)
+                return not str(res or "").startswith(("Sorry", "I couldn't", "I can't")), [res]
+            plan = svc.brain.plan(command, "typed")
+            results = [actions.run(a["name"], a["args"]) for a in plan["actions"]]
+            ok = bool(plan["actions"]) and not any(str(r or "").startswith(("Sorry", "I couldn't")) for r in results)
+            return ok, results
+        except Exception as e:
+            log.warning("Routine step %r failed: %s", command, e)
+            return False, []
 
     def quit(self):
         say("Auf Wiedersehen.")
@@ -180,9 +196,18 @@ class Assistant:
                 say(result)
             return
 
+        addressed = explicit or by_name or st.in_conversation()
+
+        # Your own routines, by name or trigger phrase.
+        routine = routines.find(norm)
+        if routine and (addressed or len(norm.split()) >= 2):
+            if not addressed:
+                caption(None, you=text)
+            st.update(thinking=True)
+            return self._respond(routines.run(routine), text, item.source, ["routine_run"])
+
         # Fast path
         m = router.match(norm, text) if norm else None
-        addressed = explicit or by_name or st.in_conversation()
         if m and (addressed or (m.safe and len(norm.split()) >= 2)):
             if not addressed:
                 caption(None, you=text)
