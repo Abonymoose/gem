@@ -106,6 +106,7 @@ DEFAULTS = {
         "break_minutes": 20,
         "break_message": "Time for a quick break. Drink some water.",
         "alarm_sound": True,
+        "class_heads_up_minutes": 5,          # warn this long before a class (0 = off)
     },
 
     "focus": {"work_minutes": 25, "break_minutes": 5},

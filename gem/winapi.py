@@ -152,8 +152,13 @@ def get_clipboard():
     return ""
 
 
+last_set_text = None     # what Gem itself last put on the clipboard (clipboard history skips it)
+
+
 def set_clipboard(text):
     import win32clipboard
+    global last_set_text
+    last_set_text = text
     for _ in range(5):
         try:
             win32clipboard.OpenClipboard()

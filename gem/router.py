@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 
 from .parse import parse_duration, parse_percent, parse_when, words_to_numbers
-from .skills import apps, replies, timers
+from .skills import apps, calc, habits, replies, timers
 
 
 @dataclass
@@ -148,6 +148,69 @@ def _rules():
     @rule(r"^(?:turn on|enable|use) (?:your )?voice(?: replies)?$|^talk out loud$", safe=False)
     def _(m, t):
         return Match("voice_replies", {"on": True}, False)
+
+    # Instant maths and conversions (no AI)
+    @rule(r"\d|percent|square root")
+    def _(m, t):
+        return Match("calculate", {"expression": t}) if calc.calculate(t) else None
+
+    @rule(r"\b(?:to|in|into|per)\b")
+    def _(m, t):
+        if not re.match(r"^(?:convert |how many |what(?:'s| is) |how much is |\d|a |an |one )", t):
+            return None
+        try:
+            return Match("convert", {"query": t}) if calc.convert(t) else None
+        except Exception:
+            return Match("convert", {"query": t})
+
+    # Stopwatch
+    @rule(r"^(?:start|begin|resume) (?:a |the )?stopwatch$")
+    def _(m, t):
+        return Match("stopwatch", {"command": "start"})
+
+    @rule(r"^(?:stop|pause|end) (?:the )?stopwatch$")
+    def _(m, t):
+        return Match("stopwatch", {"command": "stop"})
+
+    @rule(r"^(?:reset|clear) (?:the )?stopwatch$")
+    def _(m, t):
+        return Match("stopwatch", {"command": "reset"})
+
+    @rule(r"^(?:stopwatch|check (?:the )?stopwatch|what's the stopwatch at|how long on the stopwatch)$")
+    def _(m, t):
+        return Match("stopwatch", {"command": "status"})
+
+    # Clipboard, reading aloud
+    @rule(r"^(?:what did i copy|what have i copied|show (?:me )?my clipboard(?: history)?|(?:my )?clipboard history)$")
+    def _(m, t):
+        return Match("clipboard_history")
+
+    @rule(r"^paste (?:what i copied|the thing i copied|my (?:last|previous) copy|the previous (?:thing|copy|clip)|"
+          r"what i copied before|the one before|that again)$", safe=False)
+    def _(m, t):
+        return Match("clipboard_paste", {"number": 2}, False)
+
+    @rule(r"^paste (?:clip |number |item )(\d+)$", safe=False)
+    def _(m, t):
+        return Match("clipboard_paste", {"number": int(m.group(1))}, False)
+
+    @rule(r"^paste (?:the )?(?:thing|text|one|link|bit|what i copied) (?:about|with|that says|from|mentioning) (.+)$",
+          safe=False)
+    def _(m, t):
+        return Match("clipboard_paste", {"match": m.group(1)}, False)
+
+    @rule(r"^(?:clear|forget|delete) (?:my )?clipboard history$")
+    def _(m, t):
+        return Match("clipboard_clear")
+
+    @rule(r"^read (?:this|that|it|the selection|the selected text)(?: (?:to me|out|aloud|out loud|for me))?$",
+          safe=False)
+    def _(m, t):
+        return Match("read_aloud", {}, False)
+
+    @rule(r"^copy (?:that|this|it|your (?:last )?answer|what you said|the answer)(?: to (?:my |the )?clipboard)?$")
+    def _(m, t):
+        return Match("copy_answer")
 
     # Reply mode
     @rule(r"^(?:i'm |i am )?(?:going |stepping |heading )?(?:away|afk)(?: mode)?(?: for (.+)| until (.+))?$|"
@@ -654,6 +717,32 @@ def _rules():
     @rule(r"^(?:what routines do i have|list (?:my )?routines|my routines)$")
     def _(m, t):
         return Match("routine_list")
+
+    # Habits
+    @rule(r"^(?:i (?:just )?(?:drank|had|finished) (?:a |another |one |(\d+) )?(?:glass(?:es)?|cups?|bottles?) of water|"
+          r"i (?:just )?drank (?:some )?water|log (?:a |(\d+) )?(?:glass(?:es)? of )?water|"
+          r"(?:add|plus) (?:a |one )?(?:glass of )?water)$")
+    def _(m, t):
+        n = next((g for g in m.groups() if g), 1)
+        return Match("habit_log", {"habit": "water", "amount": int(n)})
+
+    @rule(r"^i (?:just )?(?:had|drank) (?:a |another |one |(\d+) )?(coffees?|teas?|cups? of coffee|cups? of tea)$")
+    def _(m, t):
+        return Match("habit_log", {"habit": m.group(2), "amount": int(m.group(1) or 1)})
+
+    @rule(r"^(?:log|add|i did|i just did|i've done|record) (\d+) ([a-z][a-z -]*?)$")
+    def _(m, t):
+        key = habits.habit_key(m.group(2))
+        if key in ("minutes", "seconds", "hours", "percent"):
+            return None
+        return Match("habit_log", {"habit": m.group(2), "amount": int(m.group(1))})
+
+    @rule(r"^how (?:much|many) ([a-z][a-z -]*?)(?: (?:have i|did i) (?:had|have|done|do|drunk|drink|drank|logged|log))?"
+          r"(?: today| this week| so far)?$")
+    def _(m, t):
+        key = habits.habit_key(m.group(1))
+        known = key in habits.UNITS or key in (habits.store.data.get("log") or {})
+        return Match("habit_stats", {"habit": key}) if known else None
 
     # Web
     @rule(r"^(?:search wikipedia for|wikipedia)\s+(.+)$")

@@ -7,6 +7,7 @@ animate on springs. Clicks pass straight through it to whatever is
 underneath, unless you rest the mouse on it for a moment.
 """
 import ctypes
+import datetime
 import math
 import os
 import time
@@ -147,7 +148,7 @@ class Island(QWidget):
         if seconds is None:
             seconds = 8.0 if kind == "pending" else max(3.5, len(self.content.text) / 12.0)
         if kind in ("timer", "focus", "weather", "system", "todo", "timers", "schedule", "briefing", "music", "web",
-                    "routine", "draft"):
+                    "routine", "draft", "calc", "clips", "habit"):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)
@@ -271,6 +272,23 @@ class Island(QWidget):
                 total = max(1.0, it["at"] - it["created"])
                 act = {"kind": "timer", "label": (it["label"] or "Timer").capitalize(),
                        "value": _countdown(it["at"] - time.time()), "progress": (it["at"] - time.time()) / total}
+        if act is None:
+            try:
+                from ..skills import timers
+                cls = timers.upcoming_class(15)
+            except Exception:
+                cls = None
+            if cls:
+                mins = max(1, int(round((cls[1] - datetime.datetime.now()).total_seconds() / 60)))
+                act = {"kind": "class", "label": cls[0].capitalize(), "value": "in %d min" % mins}
+        if act is None:
+            try:
+                from ..skills import timers
+                elapsed = timers.stopwatch_elapsed() if timers.stopwatch_running() else None
+            except Exception:
+                elapsed = None
+            if elapsed is not None:
+                act = {"kind": "stopwatch", "label": "Stopwatch", "value": _countdown(elapsed)}
         if act is None and st.focusing:
             total = float(svc.config["focus"].get("work_minutes", 25)) * 60
             left = st.focus_until - time.time()
@@ -523,6 +541,17 @@ class Island(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(T.SOFT)
             p.drawPath(moon.subtracted(cut))
+        elif kind == "class":
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.95))
+            p.drawRoundedRect(QRectF(ix - 2, cy - 7, 4, 14), 2, 2)
+        elif kind == "stopwatch":
+            p.setPen(QPen(T.SOFT, 1.4))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(QPointF(ix, cy + 1), 6, 6)
+            p.drawLine(QPointF(ix, cy - 7), QPointF(ix, cy - 5))
+            ang = (self.t % 60) / 60 * 2 * math.pi
+            p.drawLine(QPointF(ix, cy + 1), QPointF(ix + 4 * math.sin(ang), cy + 1 - 4 * math.cos(ang)))
         elif kind == "away":
             p.setPen(QPen(T.SOFT, 1.4))
             p.setBrush(Qt.NoBrush)

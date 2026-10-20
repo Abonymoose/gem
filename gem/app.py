@@ -167,6 +167,8 @@ def main():
     svc.tray = Tray()
 
     index.refresh_async()
+    from .skills.clipboard import start_watcher
+    start_watcher()
     svc.assistant.start()
     svc.listener.start()
     svc.scheduler.start()

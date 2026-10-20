@@ -10,8 +10,9 @@ Gem lives in a **Dynamic Island**: a small black pill hugging the very top of yo
 - **Idle**: a tiny pill with Gem's crystal. Clicks pass straight through it to whatever is underneath; rest the
   mouse on it for a moment to make it clickable (click to type, right-click for a menu). It tucks itself away
   during fullscreen video and games.
-- **Live activities**: a running timer counts down in the pill; it also shows focus time left, the song playing
-  in Spotify, and when you're on a call or Gem is in quiet time.
+- **Live activities**: a running timer counts down in the pill; it also shows your next class when it's 15
+  minutes away, a running stopwatch, focus time left, the song playing in Spotify, when you're away, and when
+  you're on a call or Gem is in quiet time.
 - **Listening**: while you hold Caps Lock the island widens with a live waveform of your voice and a violet glow.
 - **Answers**: the island opens into a card: weather with icons, timers with a countdown ring, to-do
   checklists, your schedule, PC gauges, now playing, volume, reminders, the morning briefing, web answers with
@@ -86,7 +87,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Windows | "show desktop", "snap this left", "minimize", "close this window", "take a screenshot of this window", "snip" |
 | Timers & alarms | "10 minute timer for pasta", "set an alarm for 6:30 am", "how much time is left", "cancel the timer", "snooze" |
 | Reminders | "remind me to call mom in 15 minutes", "remind me tomorrow at 8 am to submit the essay", "remind me to drink water every hour" |
-| Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" |
+| Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" (a heads-up comes 5 minutes before) |
 | To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note thatâ€¦", "read my notes" |
 | Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
 | Briefing | "good morning" / "brief me" â€” date, weather, today's classes, reminders and to-dos |
@@ -95,6 +96,11 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Dictation | "start dictation" â€¦ "new line" â€¦ "delete that" â€¦ "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
+| Maths & conversions | "what's 15% of 80", "12 times 7", "square root of 144", "convert 5 miles to km", "70 fahrenheit in celsius", "100 dollars to rupees" (instant, live exchange rates) |
+| Stopwatch | "start a stopwatch", "what's the stopwatch at", "stop the stopwatch" (counts up in the island) |
+| Clipboard | "what did I copy", "paste what I copied before", "paste clip 3", "paste the link about the essay" (remembered in memory only; passwords and keys are skipped) |
+| Reading | Select text and say "read this to me"; "copy that" copies Gem's last answer |
+| Habits | "I drank a glass of water", "log 20 pushups", "I had a coffee", "how much water today" (with a weekly chart and streaks) |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |

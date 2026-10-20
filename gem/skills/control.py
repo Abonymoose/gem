@@ -125,7 +125,9 @@ def help_text():
     return (how + " Triple tap Caps Lock to switch modes, and tap it to stop me talking. "
             "I can open and close apps and websites, control volume and music, set timers, alarms and reminders, "
             "keep your to-do list and notes, run focus sessions, tell you the weather and your schedule, "
-            "summarize or rewrite selected text, take dictation and screenshots, and answer questions. "
+            "summarize, rewrite or read out selected text, take dictation and screenshots, do quick maths and "
+            "conversions, track habits like water, run a stopwatch, paste things you copied earlier, draft replies, "
+            "and answer questions. "
             "Say shut up for a bit when you need quiet.")
 
 

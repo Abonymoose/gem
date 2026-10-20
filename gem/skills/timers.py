@@ -323,6 +323,57 @@ def schedule_remove(name=""):
     return "Removed %s from your schedule." % name if removed else "I couldn't find %s on your schedule." % name
 
 
+# ── Stopwatch ────────────────────────────────────────────────────────────────
+
+_watch = {"started": None, "elapsed": 0.0}
+
+
+def stopwatch_elapsed():
+    """Seconds on the stopwatch, or None if it was never started."""
+    if _watch["started"] is None and not _watch["elapsed"]:
+        return None
+    return _watch["elapsed"] + (time.time() - _watch["started"] if _watch["started"] else 0.0)
+
+
+def stopwatch_running():
+    return _watch["started"] is not None
+
+
+@action("stopwatch", "Stopwatch.", "command: start|stop|status|reset")
+def stopwatch(command="start"):
+    if command == "start":
+        if _watch["started"]:
+            return "The stopwatch is already running."
+        resumed = bool(_watch["elapsed"])
+        _watch["started"] = time.time()
+        return "Stopwatch resumed." if resumed else "Stopwatch started."
+    elapsed = stopwatch_elapsed()
+    if elapsed is None:
+        return "The stopwatch isn't running."
+    if command == "reset":
+        _watch.update(started=None, elapsed=0.0)
+        return "Stopwatch reset."
+    if command == "stop" and _watch["started"]:
+        _watch.update(started=None, elapsed=elapsed)
+        m, s = divmod(int(elapsed), 60)
+        return card("calc", "Stopped at %s." % duration_phrase(elapsed), expression="Stopwatch",
+                    result=("%d:%02d:%02d" % (m // 60, m % 60, s)) if m >= 60 else "%d:%02d" % (m, s))
+    return "%s so far." % duration_phrase(elapsed).capitalize()
+
+
+def upcoming_class(within_minutes=15):
+    """(name, datetime) of a class starting within the next N minutes, else None."""
+    now = datetime.datetime.now()
+    day = WEEKDAYS[now.weekday()]
+    best = None
+    for e in _schedule():
+        if day in e.get("days", []):
+            dt = _class_dt(e, 0, now)
+            if now < dt <= now + datetime.timedelta(minutes=within_minutes) and (best is None or dt < best[1]):
+                best = (e["name"], dt)
+    return best
+
+
 # ── Background scheduler ─────────────────────────────────────────────────────
 
 class Scheduler:
@@ -450,7 +501,15 @@ class Scheduler:
     def _check_schedule_events(self, now):
         day = WEEKDAYS[now.weekday()]
         hhmm = now.strftime("%H:%M")
+        ahead = int(self.cfg["reminders"].get("class_heads_up_minutes", 5) or 0)
+        soon = (now + datetime.timedelta(minutes=ahead)).strftime("%H:%M") if ahead else None
         for e in _schedule():
+            if soon and day in e.get("days", []) and e.get("time") == soon:
+                key = "soon_%s_%s" % (e["name"], now.strftime("%Y%m%d%H%M"))
+                if key not in self._fired_schedule:
+                    self._fired_schedule.add(key)
+                    notify(e["name"].capitalize(), "%s starts in %d minutes." % (e["name"].capitalize(), ahead),
+                           sound="soft")
             if day in e.get("days", []) and e.get("time") == hhmm:
                 key = "%s_%s" % (e["name"], now.strftime("%Y%m%d%H%M"))
                 if key not in self._fired_schedule:

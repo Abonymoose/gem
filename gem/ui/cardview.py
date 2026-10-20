@@ -198,7 +198,8 @@ def draw_ring(p, cx, cy, r, progress, width, colors=None, track=None):
 LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "ALARM", "timers": "TIMERS & REMINDERS",
           "todo": "TO-DO", "music": "NOW PLAYING", "system": "THIS PC", "schedule": "SCHEDULE", "volume": "VOLUME",
           "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
-          "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT"}
+          "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT", "calc": "",
+          "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": ""}
 
 
 class CardContent:
@@ -243,6 +244,8 @@ class CardContent:
             label = (c.get("title") or "Alarm").upper()
         if self.kind == "focus" and c.get("phase") == "break":
             label = "BREAK"
+        if self.kind == "habit" and c.get("habit"):
+            label = c["habit"].upper() + (" · %d-DAY STREAK" % c["streak"] if c.get("streak", 0) > 1 else "")
         if self.kind == "draft" and c.get("title"):
             label = c["title"].upper()
         if self.kind == "routine" and c.get("name"):
@@ -296,6 +299,14 @@ class CardContent:
             return min(220, int(w * self._image.height() / max(1, self._image.width()))) + 26
         if k == "confirm":
             return _wrap_height(F_BODY, self.text, w) + 40
+        if k == "calc":
+            return 66
+        if k == "clips":
+            return 28 * max(1, min(8, len(c.get("items") or [])))
+        if k == "reading":
+            return _wrap_height(F_BODY, c.get("note", ""), w)
+        if k == "habit":
+            return 92
         if k == "draft":
             return _wrap_height(F_BODY, c.get("note", ""), w - 16) + 14 + _wrap_height(F_SMALL, self.text, w)
         if k == "web":
@@ -677,3 +688,61 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_DIM)
         p.drawText(QRectF(x, y + nh + 14, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)
+
+    def _paint_calc(self, p, x, y, w):
+        c = self.card
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, y, w, 20), Qt.AlignLeft | Qt.AlignVCenter, c.get("expression", ""))
+        p.setFont(T.font(34, QFont.Light))
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y + 20, w, 44), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(p.font()).elidedText("= " + c.get("result", ""), Qt.ElideRight, int(w)))
+
+    def _paint_clips(self, p, x, y, w):
+        for i, it in enumerate((self.card.get("items") or [])[:8]):
+            yy = y + i * 28
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.SOFT, 0.16))
+            p.drawEllipse(QRectF(x, yy + 3, 20, 20))
+            p.setFont(T.font(11, QFont.DemiBold))
+            p.setPen(T.SOFT)
+            p.drawText(QRectF(x, yy + 3, 20, 20), Qt.AlignCenter, str(it["n"]))
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 30, yy, w - 30, 26), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(it["text"], Qt.ElideRight, int(w - 30)))
+
+    def _paint_reading(self, p, x, y, w):
+        note = self.card.get("note", "")
+        p.setFont(F_BODY)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y, w, _wrap_height(F_BODY, note, w) + 4), Qt.TextWordWrap, note)
+
+    def _paint_habit(self, p, x, y, w):
+        c = self.card
+        p.setFont(T.font(40, QFont.Light))
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y - 4, 110, 50), Qt.AlignLeft | Qt.AlignVCenter, str(c.get("today", 0)))
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x, y + 46, 130, 20), Qt.AlignLeft | Qt.AlignVCenter, "%s today" % c.get("unit", ""))
+        days = c.get("days") or []
+        top = max([v for _, v in days] + [1])
+        bx, bw, gap, hmax = x + 150, 22, 12, 56
+        for i, (label, v) in enumerate(days):
+            h = max(3, hmax * v / top) if v else 3
+            r = QRectF(bx + i * (bw + gap), y + 6 + hmax - h, bw, h)
+            today = i == len(days) - 1
+            if v:
+                g = QLinearGradient(r.bottomLeft(), r.topLeft())
+                g.setColorAt(0, QColor(124, 58, 237))
+                g.setColorAt(1, QColor(196, 160, 240) if today else QColor(139, 92, 246))
+                p.setBrush(g)
+            else:
+                p.setBrush(T.alpha(T.SOFT, 0.14))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(r, 4, 4)
+            p.setFont(T.font(11, QFont.DemiBold if today else QFont.Normal))
+            p.setPen(T.TEXT if today else T.TEXT_FAINT)
+            p.drawText(QRectF(r.left() - 4, y + 66, bw + 8, 18), Qt.AlignCenter, label)
