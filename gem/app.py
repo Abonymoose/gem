@@ -48,6 +48,30 @@ def _single_instance():
     return None
 
 
+def _ensure_shortcut():
+    """Keep a Start Menu shortcut to the installed exe, so Gem shows up in Start search."""
+    installed = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Gem", "Gem.exe")
+    if not getattr(sys, "frozen", False) or os.path.normcase(sys.executable) != os.path.normcase(installed):
+        return                                  # only the installed copy, never a test build in dist\
+    try:
+        import pythoncom
+        import win32com.client
+        pythoncom.CoInitialize()
+        path = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Gem.lnk")
+        sh = win32com.client.Dispatch("WScript.Shell")
+        if os.path.exists(path) and os.path.normcase(sh.CreateShortcut(path).TargetPath) == os.path.normcase(sys.executable):
+            return
+        lnk = sh.CreateShortcut(path)
+        lnk.TargetPath = sys.executable
+        lnk.WorkingDirectory = os.path.dirname(sys.executable)
+        lnk.IconLocation = sys.executable + ",0"
+        lnk.Description = "Gem voice assistant"
+        lnk.Save()
+        log.info("Start Menu shortcut created")
+    except Exception:
+        log.debug("Couldn't create the Start Menu shortcut", exc_info=True)
+
+
 def restart():
     """Start a fresh copy of Gem, then quit this one."""
     if getattr(sys, "frozen", False):
@@ -182,6 +206,7 @@ def main():
     from .skills.insights import start_tracker
     start_watcher()
     start_tracker()
+    threading.Thread(target=_ensure_shortcut, name="shortcut", daemon=True).start()
     svc.assistant.start()
     svc.listener.start()
     svc.scheduler.start()
