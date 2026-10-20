@@ -43,6 +43,11 @@ def chime(kind="soft"):
 def notify(title, message, speak=True, sound=None, flash=True, icon="bell"):
     """Alert the user in the least intrusive way the current state allows."""
     log.info("Notify: %s — %s", title, message)
+    try:
+        from . import headsup
+        headsup.note_missed(title, message)          # kept for "while you were away" if you're not at the PC
+    except Exception:
+        pass
     if svc.tray:
         svc.tray.notify(title, message)
     if flash and svc.lights and svc.config["lights"].get("flash_on_alerts", True):

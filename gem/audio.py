@@ -65,6 +65,32 @@ class Listener:
         self.hype_active = None              # () -> bool
         self._hseg = None
         self._hsil = 0
+        self._cap = None                     # voice-note capture in progress (see capture())
+
+    def capture(self, max_s=120, end_silence_s=2.5, start_timeout_s=8):
+        """Record hands-free until you stop talking (voice notes). Returns PCM bytes ('' if nothing said)."""
+        cap = {"frames": [], "speech": 0, "silence": 0, "done": threading.Event(), "t0": time.time()}
+        with self._lock:
+            self._cap = cap
+            self._seg = None
+        limit = time.time() + max_s + start_timeout_s
+        while not cap["done"].wait(0.1):
+            if time.time() > limit or (not cap["speech"] and time.time() - cap["t0"] > start_timeout_s):
+                break
+        with self._lock:
+            self._cap = None
+        return b"".join(cap["frames"]) if cap["speech"] >= 10 else b""
+
+    def _capture_frame(self, frame, speech):
+        cap = self._cap
+        if not cap["speech"] and not speech:
+            cap["frames"] = (cap["frames"] + [frame])[-10:]       # keep a little lead-in
+            return
+        cap["frames"].append(frame)
+        cap["speech"] += 1 if speech else 0
+        cap["silence"] = 0 if speech else cap["silence"] + 1
+        if cap["silence"] * FRAME_MS >= 2500 or len(cap["frames"]) * FRAME_MS >= 120000:
+            cap["done"].set()
 
     def start(self):
         threading.Thread(target=self._run, name="mic", daemon=True).start()
@@ -155,12 +181,16 @@ class Listener:
                     self._closing = None
                     emit = ("ptt", frames)
 
-            if self._hold is not None:
+            hype = None
+            if self._cap is not None and self._hold is None:
+                self._capture_frame(frame, speech)          # a voice note: not a command
+            elif self._hold is not None:
                 if len(self._hold) < MAX_UTTERANCE_FRAMES:
                     self._hold.append(frame)
             elif emit is None:
                 emit = self._open_mode(frame, speech)
-            hype = self._hype_mode(frame, speech, rms) if self._hold is None else None
+            if self._hold is None and self._cap is None:
+                hype = self._hype_mode(frame, speech, rms)
 
         if emit:
             self._emit(*emit)

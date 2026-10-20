@@ -288,3 +288,41 @@ def sun_times(city=None):
         timeout=6).json()["daily"]
     fmt = lambda s: datetime.datetime.fromisoformat(s).strftime("%I:%M %p").lstrip("0")
     return "In %s, sunrise is at %s and sunset at %s." % (name, fmt(d["sunrise"][0]), fmt(d["sunset"][0]))
+
+
+def _air_now(city):
+    """(US AQI, PM2.5, UV index) right now for a city, or Nones."""
+    geo = _geocode(city)
+    if not geo:
+        return None, None, None
+    lat, lon, _ = geo
+    cur = requests.get("https://air-quality-api.open-meteo.com/v1/air-quality", params={
+        "latitude": lat, "longitude": lon, "timezone": "auto", "current": "us_aqi,pm2_5,uv_index"},
+        timeout=8).json().get("current") or {}
+    return cur.get("us_aqi"), cur.get("pm2_5"), cur.get("uv_index")
+
+
+def _aqi_word(aqi):
+    for limit, word in ((50, "good"), (100, "moderate"), (150, "unhealthy for sensitive people"), (200, "unhealthy"),
+                        (300, "very unhealthy")):
+        if aqi <= limit:
+            return word
+    return "hazardous"
+
+
+def _uv_word(uv):
+    return "low" if uv < 3 else "moderate" if uv < 6 else "high" if uv < 8 else "very high" if uv < 11 else "extreme"
+
+
+@action("air_quality", "Air quality (AQI and PM2.5) and the UV index for a city (home by default).", "city?: str")
+def air_quality(city=None):
+    city = (city or svc.config.get("home_city") or "").strip()
+    if not city:
+        raise ActionError("Which city? You can also say: my city is, and the name.")
+    aqi, pm, uv = _air_now(city)
+    if aqi is None:
+        return "I couldn't get the air quality for %s." % city
+    name = (_geocode(city) or (0, 0, city))[2]
+    tip = " Maybe skip the run outside." if aqi > 150 else ""
+    uv_txt = " The UV index is %d, %s." % (round(uv), _uv_word(uv)) if uv is not None else ""
+    return "Air quality in %s is %s, AQI %d.%s%s" % (name, _aqi_word(aqi), aqi, uv_txt, tip)

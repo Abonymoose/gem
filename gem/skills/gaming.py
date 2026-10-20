@@ -68,6 +68,29 @@ def clip_that():
     return None
 
 
+# ── Screen recording (Game Bar) ──────────────────────────────────────────────
+
+rec = {"on": False, "since": 0.0}
+
+
+@action("record_screen", "Start or stop recording the screen (the game or app in front) with Xbox Game Bar.",
+        "on: bool")
+def record_screen(on=True):
+    on = bool(on)
+    if on == rec["on"] and time.time() - rec["since"] < 4 * 3600:
+        return "Already recording." if on else "I'm not recording."
+    press("win", "alt", "r")
+    rec.update(on=on, since=time.time())
+    chime("ack")
+    if svc.lights:
+        svc.lights.flash("ack")
+    if on:
+        caption("Recording. Say stop recording when you're done", seconds=3)
+        return None
+    caption("Saved to Videos › Captures", seconds=3)
+    return None
+
+
 # ── Discord ──────────────────────────────────────────────────────────────────
 
 def _discord_running():

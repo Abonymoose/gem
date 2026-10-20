@@ -203,7 +203,8 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": "",
           "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME",
           "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED",
-          "voice": "VOICE TRAINING", "people": "VOICES I KNOW", "color": "UNDER YOUR MOUSE"}
+          "voice": "VOICE TRAINING", "people": "VOICES I KNOW", "color": "UNDER YOUR MOUSE", "files": "FILES",
+          "trivia": "TRIVIA"}
 
 
 class CardContent:
@@ -260,6 +261,12 @@ class CardContent:
             label += " · " + c["name"].upper()
         if self.kind == "picks" and c.get("title"):
             label = c["title"].upper()
+        if self.kind == "files" and c.get("total"):
+            label += " · %d FOUND" % c["total"]
+        if self.kind == "trivia":
+            label = "TRIVIA · %s" % (c.get("topic") or "").upper()
+            if not c.get("done"):
+                label += " · %d OF %d" % (c.get("number", 1), c.get("total", 5))
         if self.kind == "voice":
             who = c.get("person")
             if c.get("done"):
@@ -328,6 +335,13 @@ class CardContent:
             return 80
         if k == "color":
             return 60
+        if k == "files":
+            return 46 * min(5, len(c.get("rows") or [])) - 4
+        if k == "trivia":
+            if c.get("done"):
+                return 64 + _wrap_height(F_SMALL, self.text, w)
+            top = 24 if c.get("last_ok") is not None else 0
+            return top + _wrap_height(F_TITLE, c.get("question", ""), w) + 10 + 30 * len(c.get("options") or []) + 22
         if k == "people":
             return 34 * (min(6, len(c.get("rows") or [])) + (1 if c.get("me") else 0))
         if k == "voice":
@@ -890,6 +904,64 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.LAVENDER)
         p.drawText(QRectF(x, y + 56, w, 20), Qt.AlignLeft | Qt.AlignVCenter, c.get("verdict", ""))
+
+    def _paint_files(self, p, x, y, w):
+        for i, r in enumerate((self.card.get("rows") or [])[:5]):
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.85) if i == 0 else T.alpha(T.SOFT, 0.16))
+            p.drawRoundedRect(QRectF(x, y + 4, 26, 30), 6, 6)
+            ext = os.path.splitext(r["name"])[1][1:4].upper() or "?"
+            p.setFont(T.font(8, QFont.DemiBold))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x, y + 4, 26, 30), Qt.AlignCenter, ext)
+            p.setFont(T.font(14, QFont.DemiBold))
+            p.drawText(QRectF(x + 38, y, w - 38, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(p.font()).elidedText(r["name"], Qt.ElideMiddle, int(w - 38)))
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x + 38, y + 20, w - 38, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                       "%s · %s · %s" % (r.get("folder", ""), r.get("when", ""), r.get("size", "")))
+            y += 46
+
+    def _paint_trivia(self, p, x, y, w):
+        c = self.card
+        if c.get("done"):
+            p.setFont(T.font(36, QFont.Light))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x, y - 4, w, 50), Qt.AlignLeft | Qt.AlignVCenter, "%d / %d" % (c.get("score", 0),
+                                                                                         c.get("total", 5)))
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y + 56, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)
+            return
+        if c.get("last_ok") is not None:
+            ok = c["last_ok"]
+            p.setFont(T.font(12, QFont.DemiBold))
+            p.setPen(QColor(52, 211, 153) if ok else QColor(244, 114, 182))
+            p.drawText(QRectF(x, y, w, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                       ("✓  Correct" if ok else "✗  Not quite") + "   ·   score %d" % c.get("score", 0))
+            y += 24
+        q = c.get("question", "")
+        qh = _wrap_height(F_TITLE, q, w)
+        p.setFont(F_TITLE)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y, w, qh + 2), Qt.TextWordWrap, q)
+        y += qh + 10
+        for i, opt in enumerate(c.get("options") or []):
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.8))
+            p.drawEllipse(QRectF(x, y + 2, 22, 22))
+            p.setFont(T.font(11, QFont.DemiBold))
+            p.setPen(QColor(255, 255, 255))
+            p.drawText(QRectF(x, y + 2, 22, 22), Qt.AlignCenter, "ABCD"[i])
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 34, y, w - 34, 26), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(opt, Qt.ElideRight, int(w - 34)))
+            y += 30
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_FAINT)
+        p.drawText(QRectF(x, y + 2, w, 18), Qt.AlignLeft | Qt.AlignVCenter, "Say A, B, C or D · skip · stop")
 
     def _paint_color(self, p, x, y, w):
         c = self.card

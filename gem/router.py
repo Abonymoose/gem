@@ -8,6 +8,7 @@ meant for Gem (always-listening mode); the rest need Gem's name, push-to-talk
 or an ongoing conversation.
 """
 import re
+import time
 from dataclasses import dataclass, field
 
 from .parse import parse_duration, parse_percent, parse_when, words_to_numbers
@@ -61,6 +62,11 @@ def _openable(name):
     apps.index.ready.wait(timeout=3)
     entries = apps.index.entries
     return low in entries or any(k.startswith(low + " ") for k in entries)
+
+
+def _power_word(words):
+    w = (words or "").lower()
+    return "sleep" if "sleep" in w else "hibernate" if "hibernate" in w else "restart" if "restart" in w else "shutdown"
 
 
 def _known_app(name):
@@ -691,6 +697,182 @@ def _rules():
     @rule(r"^hello there$")
     def _(m, t):
         return Match("general_kenobi")
+
+    # Files
+    @rule(r"^(?:find|show(?: me)?|where(?:'s| is| are)|look for|search for|get|pull up|list) (?:me )?"
+          r"(.*\b(?:pdfs?|photos?|pictures?|images?|screenshots?|videos?|songs?|documents?|docs?|presentations?|"
+          r"slides|spreadsheets?|zips?|installers?|files)\b.*)$")
+    def _(m, t):
+        q = m.group(1)
+        if re.search(r"\b(?:saved screens?|voice notes?)\b", q) or re.match(r"^(?:my |the )?file (?:called|named) ", q):
+            return None
+        return Match("find_files", {"query": q})
+
+    @rule(r"^what did i download(?: today| yesterday| this week| last week| recently)?$|"
+          r"^(?:what(?:'s| is| are)|which files are) (?:taking up|using) (?:all )?(?:my |the )?(?:space|storage)$|"
+          r"^(?:what are )?my (?:biggest|largest) files$")
+    def _(m, t):
+        q = t if "download" not in t else "downloads " + t
+        return Match("find_files", {"query": q, "biggest": "space" in t or "storage" in t or "biggest" in t
+                                    or "largest" in t})
+
+    @rule(r"^(?:open|show) (?:the )?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|last|top)(?: one| file| result)?"
+          r"(?: in (?:the |its )?folder)?$|^open (?:number|no) (\d)$|^show (?:it|that) in (?:the |its )?folder$")
+    def _(m, t):
+        from .skills import files_find
+        if not files_find.last_results["items"] or time.time() - files_find.last_results["t"] > 600:
+            return None
+        word = m.group(1) or m.group(2) or "first"
+        n = {"first": 1, "1st": 1, "top": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4,
+             "fifth": 5, "5th": 5}.get(word, len(files_find.last_results["items"]) if word == "last" else
+                                      int(word) if word.isdigit() else 1)
+        return Match("open_result", {"number": n, "folder": "folder" in t})
+
+    # Power when done
+    @rule(r"^(turn off|shut down|shutdown|switch off|power off|sleep|go to sleep|hibernate|restart)"
+          r"(?: the| my)?(?: pc| computer| laptop)? (?:when|after|once) (?:the |this |my )?"
+          r"(movie|film|video|show|episode|music|song|playlist|stream|it|everything)(?: ends| is over| finishes| is done|"
+          r" stops)?$|^(?:put the (?:pc|computer) to sleep|turn everything off) (?:when|after) (?:the |this )?"
+          r"(?:movie|film|video|show)(?: ends| is over)?$", safe=False)
+    def _(m, t):
+        return Match("power_when", {"power": _power_word(m.group(1) or "sleep"), "trigger": "media_end"}, False)
+
+    @rule(r"^(turn off|shut down|shutdown|switch off|power off|sleep|hibernate|restart)(?: the| my)?"
+          r"(?: pc| computer| laptop)? (?:when|after|once) (?:my |the )?downloads? (?:finish(?:es)?|is done|are done|"
+          r"completes?|ends?)$", safe=False)
+    def _(m, t):
+        return Match("power_when", {"power": _power_word(m.group(1)), "trigger": "download_done"}, False)
+
+    @rule(r"^(turn off|shut down|shutdown|switch off|power off|sleep|hibernate|restart)(?: the| my)?"
+          r"(?: pc| computer| laptop) in (.+)$", safe=False)
+    def _(m, t):
+        secs = parse_duration(m.group(2))
+        return Match("power_when", {"power": _power_word(m.group(1)), "trigger": "time", "minutes": secs / 60.0},
+                     False) if secs else None
+
+    @rule(r"^(?:don't|dont|do not) (?:turn off|shut down|sleep|restart)(?: the)?(?: pc| computer)?$|"
+          r"^cancel (?:the )?(?:sleep|power off|turn off)(?: plan| timer)?$")
+    def _(m, t):
+        return Match("power_when_cancel")
+
+    # Video
+    @rule(r"^(?:skip|skip ahead|skip forward|fast forward|go forward|jump ahead|jump forward|forward)(?: by)? "
+          r"(.+?)(?: forward| ahead)?$")
+    def _(m, t):
+        secs = parse_duration(m.group(1))
+        return Match("video_seek", {"seconds": secs}) if secs else None
+
+    @rule(r"^(?:rewind|go back|jump back|skip back|skip backward|back)(?: by)? (.+?)(?: back)?$")
+    def _(m, t):
+        secs = parse_duration(m.group(1))
+        return Match("video_seek", {"seconds": -secs}) if secs else None
+
+    @rule(r"^(?:make (?:it|the video|this) |go |video )?full ?screen$")
+    def _(m, t):
+        return Match("video_key", {"what": "fullscreen"})
+
+    @rule(r"^(?:turn on |turn off |toggle |show |hide |put on |enable |disable )?(?:the )?(?:captions|subtitles|subs|cc)"
+          r"(?: on| off)?$")
+    def _(m, t):
+        return Match("video_key", {"what": "captions"})
+
+    # Games and sounds
+    @rule(r"^(?:let's play|lets play|play|start|can we play|i want to play|do) (?:a |some )?(?:game of |round of )?"
+          r"trivia(?: about (.+)| on (.+))?$|^trivia(?: time)?(?: about (.+))?$|^quiz me(?: on| about)? ?(.*)$")
+    def _(m, t):
+        return Match("trivia_start", {"topic": next((g for g in m.groups() if g), "")})
+
+    @rule(r"^(?:play|put on|start|turn on)(?: some| the)? (rain|ocean waves|ocean|waves|sea waves|sea|beach|fan|"
+          r"thunderstorm|storm|brown noise|pink noise|white noise|brown|pink|white)(?: sounds?| noise)?(?: for (.+))?$")
+    def _(m, t):
+        what = m.group(1)
+        if what in ("brown", "pink", "white", "fan", "storm", "sea") and not re.search(r"\b(?:noise|sounds?)\b", t):
+            return None                                 # "play white" is more likely a song
+        secs = parse_duration(m.group(2) or "")
+        return Match("ambient_play", {"sound": what, "minutes": secs / 60.0 if secs else None})
+
+    @rule(r"^(?:stop|turn off|end|kill) (?:the )?(?:rain|ocean|ambient|background|white noise|brown noise|pink noise|"
+          r"fan|wave|waves)?(?: sounds?| noise)$")
+    def _(m, t):
+        return Match("ambient_stop")
+
+    @rule(r"^(?:make )?(?:the )?(?:rain|ambient|background|noise|sounds?|white noise|brown noise) (louder|quieter|softer)$")
+    def _(m, t):
+        return Match("ambient_volume", {"direction": "up" if m.group(1) == "louder" else "down"})
+
+    # Voice notes
+    @rule(r"^(?:record|take|make|start|leave) (?:a |me a )?voice (?:note|memo|message)$")
+    def _(m, t):
+        return Match("voice_note")
+
+    @rule(r"^(?:play|listen to) (?:my |the )?(?:last |latest )?voice (?:note|memo)(?: about (.+))?$")
+    def _(m, t):
+        return Match("voice_note_play", {"query": m.group(1) or ""})
+
+    @rule(r"^(?:read|show|list|what are|what's in) (?:me )?(?:my )?(?:latest )?voice (?:notes|memos|note)"
+          r"(?: about (.+))?$|^what did i say in my voice note(?: about (.+))?$")
+    def _(m, t):
+        return Match("voice_notes_list", {"query": m.group(1) or m.group(2) or ""})
+
+    # Images
+    @rule(r"^(?:make|create|generate|draw|design|paint|give)(?: me)? (?:a |an |some )?(?:new )?"
+          r"(wallpaper|background|desktop background|image|picture|drawing|painting|art|artwork|pic)"
+          r"(?: of| with| showing| that shows)? (.+)$")
+    def _(m, t):
+        raw = re.search(r"(?:wallpaper|background|image|picture|drawing|painting|art|artwork|pic)"
+                        r"(?:\s+(?:of|with|showing|that shows))?\s+(.+?)[.!?]*$", _raw, re.I)
+        return Match("imagine", {"prompt": raw.group(1) if raw else m.group(2),
+                                 "wallpaper": m.group(1) in ("wallpaper", "background", "desktop background")})
+
+    @rule(r"^draw (?:me )?(?:a |an )?(.+)$")
+    def _(m, t):
+        return Match("imagine", {"prompt": m.group(1)})
+
+    @rule(r"^(?:set|make|use|put) (?:it|that|this|that one|this one|the image|the picture) (?:as )?(?:my |the )?"
+          r"(?:wallpaper|background|desktop(?: background)?)$")
+    def _(m, t):
+        return Match("set_wallpaper")
+
+    # Audio output
+    @rule(r"^(?:switch|change|move|swap|put) (?:the )?(?:audio|sound|output|speaker)(?: output)? (?:to|over to) "
+          r"(?:my |the )?(.+)$|^(?:switch|change) to (?:my |the )?(headphones|headset|speakers|earphones|earbuds)$|"
+          r"^(?:use|play (?:sound|audio) (?:through|on|from)) (?:my |the )?(headphones|headset|speakers|earphones|"
+          r"earbuds|monitor|tv)$")
+    def _(m, t):
+        return Match("audio_output", {"device": next(g for g in m.groups() if g)})
+
+    @rule(r"^(?:what(?:'s| is| am i) (?:my )?(?:audio|sound) (?:output|playing through|coming out of)|which "
+          r"(?:speakers|audio device|output) (?:is|am i using)(?: on)?|where is (?:the )?sound coming from)$")
+    def _(m, t):
+        return Match("audio_output", {"device": ""})
+
+    # Screen recording
+    @rule(r"^(?:start |begin )?(?:screen )?recording(?: my screen| the screen| this)?$|"
+          r"^record (?:my |the )?(?:screen|gameplay|game)$|^start recording (?:my |the )?(?:screen|game|gameplay)$")
+    def _(m, t):
+        return Match("record_screen", {"on": True})
+
+    @rule(r"^(?:stop|end|finish) (?:the )?(?:screen )?recording$")
+    def _(m, t):
+        return Match("record_screen", {"on": False})
+
+    # Air
+    @rule(r"^(?:how(?:'s| is) the |what(?:'s| is) the |check the )?(?:air quality|aqi|pollution|air)(?: like)?"
+          r"(?: in (.+?))?(?: today| right now| now| outside)?$|^is the air (?:bad|good|safe|clean|polluted)"
+          r"(?: today| outside)?$|^(?:what(?:'s| is) the )?uv(?: index)?(?: today| right now)?$")
+    def _(m, t):
+        if t in ("air",):
+            return None
+        return Match("air_quality", {"city": m.group(1) or ""})
+
+    # Other people's dates
+    @rule(r"^([a-z]+(?: [a-z]+)?)'s (birthday|bday|anniversary) is (?:on )?(.+)$")
+    def _(m, t):
+        from .skills import world
+        if not world.parse_date(m.group(3)):
+            return None
+        kind = "birthday" if m.group(2) == "bday" else m.group(2)
+        return Match("save_date", {"name": "%s's %s" % (m.group(1), kind), "date": m.group(3)})
 
     # Gaming and PC
     @rule(r"^(?:(?:un)?mute|(?:un)?deafen) (?:me|myself|my mic(?:rophone)?)(?: (?:on|in) discord)?$|"

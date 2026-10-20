@@ -241,7 +241,8 @@ def save_date(name="", date=""):
     key = re.sub(r"^(?:my|the)\s+", "", name.lower().strip())
     with store as data:
         data["dates"][key] = {"month": d.month, "day": d.day, "year": d.year}
-    return "Saved %s: %s." % (key, d.strftime("%B %d").replace(" 0", " "))
+    shown = key[:1].upper() + key[1:] if "'s " in key else key
+    return "Saved %s: %s." % (shown, d.strftime("%B %d").replace(" 0", " "))
 
 
 @action("countdown", "How long until a date, holiday or saved date (birthday, exam...).", "to: str")
@@ -257,7 +258,7 @@ def countdown(to=""):
         target = datetime.date(today.year, s["month"], s["day"])
         if target < today:
             target = datetime.date(today.year + 1, s["month"], s["day"])
-        label = "your " + t
+        label = (t[:1].upper() + t[1:]) if "'s " in t else "your " + t       # "Aarav's birthday", "your exam"
     elif t in HOLIDAYS:
         target = HOLIDAYS[t](today.year)
         if target is None or target < today:

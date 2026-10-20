@@ -150,6 +150,9 @@ def power(command="lock"):
         lock_workstation()
         return None
     if command == "cancel_shutdown":
+        from . import power_auto
+        if power_auto.pending():
+            power_auto.power_when_cancel()
         subprocess.run(["shutdown", "/a"], creationflags=subprocess.CREATE_NO_WINDOW)
         return "Cancelled."
     if command not in POWER_WORDS:

@@ -120,6 +120,17 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Heads-ups | Rain in the next couple of hours (needs "my city is ..."), a big download finished, something hogging the CPU or memory, C drive almost full, low battery. Held back during calls and games |
 | Offline | If the internet or Groq is down, speech falls back to an offline model (Vosk, 40 MB download) so timers, volume, music and apps keep working |
 | Little extras | "what's the Wi-Fi password" (shown and copied, not spoken), "make a Wi-Fi QR code" for guests, "QR code for this link", "shorten this link", "copy the text from my screen", "what colour is this" (under the mouse), "remind me to reply to Aarav when I open Discord" |
+| Files | "find the PDF I downloaded yesterday", "show me photos from this week", "what's taking up space", "where are my screenshots" → top matches; "open the first one", "show it in the folder" |
+| Power when done | "turn off the PC when the movie ends", "sleep when my download finishes", "shut down the computer in 2 hours". A one-minute warning first; "cancel" stops it |
+| Video | "skip 30 seconds", "rewind 10 seconds", "go back a minute", "fullscreen", "subtitles" for YouTube, Netflix, Prime, Hotstar, VLC and more (only when a player is in front) |
+| Trivia | "let's play trivia", "trivia about movies", "quiz me on cricket": five questions, answer "B", "the second one" or the answer itself; "skip", "stop" |
+| Ambient sounds | "play rain sounds", "play brown noise for 30 minutes", "ocean waves", "fan", "white noise"; "make it quieter", "stop the sounds". Made on the PC, dips while Gem talks |
+| Voice notes | "record a voice note" (hands-free, stops when you do, transcribed), "play my last voice note", "read my voice notes", "what did I say in my voice note about the trip" |
+| Images | "make me a wallpaper of a misty forest", "draw a cat in a space suit", then "set it as my wallpaper". Free and quick (Pollinations), so not 4K; one image every ~45 seconds |
+| Sound output | "switch to my headphones", "switch the audio to speakers", "what's my audio output" |
+| Recording | "start recording" / "stop recording" (Xbox Game Bar, saved to Videos › Captures) |
+| Air | "how's the air quality", "what's the AQI in Delhi", "UV index"; heads-up when it's unhealthy |
+| More heads-ups | "Aarav's birthday is March 5" → reminded the evening before and on the day; "while you were away" summary when you come back to the PC; softer voice at night (11 PM to 7 AM) |
 | Picks | "what should I watch tonight", "what should I play", "recommend a funny movie": three picks based on your mood, what you've told Gem and the games you have installed |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |

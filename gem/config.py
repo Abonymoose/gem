@@ -79,6 +79,9 @@ DEFAULTS = {
         "duck_others": True,                  # lower other apps while you talk to Gem or she speaks
         "duck_level": 0.3,
         "speak_in_gaming": False,
+        # Softer at night so Gem doesn't wake anyone: [start hour, end hour] and how loud then.
+        "quiet_hours": [23, 7],
+        "quiet_volume": 0.55,
     },
 
     "stt": {
@@ -106,7 +109,8 @@ DEFAULTS = {
     "voice_lock": {
         "threshold": 0.45,
         "learn_from_push_to_talk": True,
-        "in_push_to_talk": False,
+        # Holding Caps Lock is checked too (a bit more forgiving; too-short clips like "pause" still pass).
+        "in_push_to_talk": True,
     },
 
     # In a game, shout one of these (or say "clip that") and Gem clips the last 30 seconds with Game Bar.
@@ -121,7 +125,7 @@ DEFAULTS = {
     },
 
     # Gem speaks up first: rain soon (needs your city), finished downloads, a PC that's struggling, low battery.
-    "heads_up": {"rain": True, "downloads": True, "pc": True},
+    "heads_up": {"rain": True, "downloads": True, "pc": True, "dates": True, "air": True},
 
     # Remember lasting things you mention in conversation ("I main Jett") without "remember that".
     "auto_memory": True,

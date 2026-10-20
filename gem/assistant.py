@@ -15,7 +15,7 @@ from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import routines, text as text_skill, voice_id
+from .skills import power_auto, routines, text as text_skill, trivia, voice_id
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -23,6 +23,8 @@ log = logging.getLogger("gem.assistant")
 YES = {"yes", "yeah", "yep", "yup", "sure", "confirm", "do it", "go ahead", "yes please", "okay", "ok",
        "correct", "please do", "yes do it", "affirmative"}
 NO = {"no", "nope", "cancel", "don't", "dont", "stop", "never mind", "nevermind", "no thanks", "don't do it"}
+POWER_CANCEL = {"cancel", "stop", "cancel it", "don't", "dont", "no", "wait", "never mind", "nevermind", "stop it",
+                "don't do it", "dont do it", "don't turn it off", "i'm still watching", "im still watching"}
 
 FILLER = {"yeah", "yes", "no", "okay", "ok", "lol", "bro", "what", "huh", "right", "sure", "nice", "cool", "wow",
           "yep", "nope", "hello", "hi", "hey", "thanks", "alright", "oh", "damn", "bruh", "um", "uh", "like",
@@ -179,6 +181,14 @@ class Assistant:
                 if plain in NO:
                     return self._respond("Okay, I won't.", text, item.source, [])
 
+        if plain in POWER_CANCEL and power_auto.pending():
+            return self._respond(power_auto.power_when_cancel(), text, item.source, ["power_when_cancel"])
+
+        if trivia.active() and (explicit or st.in_conversation()):
+            reply = trivia.answer(text, plain)              # None: not an answer, handle it normally
+            if reply is not None:
+                return self._respond(reply, text, item.source, ["trivia"])
+
         if voice_id.training_active() and item.audio and item.source in ("ptt", "open"):
             return self._respond(voice_id.train_step(item.audio, plain), text, item.source, ["voice_train"])
 
@@ -270,10 +280,13 @@ class Assistant:
             log.info("Ignored %s (blocked, %s)", voice_id.display(who), score_txt)
             voice_id.greet_blocked(who)
             return False, who
-        if who in ("?", None) and (item.source == "open" and lock or strict_ptt):
+        if item.source == "open" and lock and who in ("?", None):
             log.info("Voice lock: ignored speech that doesn't sound like you (%s)", score_txt)
-            if ptt:
-                caption("That didn't sound like you", seconds=2.5)
+            return False, None
+        # Push-to-talk: holding the key is already a good sign, so only a clear mismatch is refused.
+        if strict_ptt and who is None and sc is not None and sc < voice_id.base_threshold() - 0.08:
+            log.info("Voice lock (push-to-talk): refused a voice that isn't yours (%s)", score_txt)
+            caption("That didn't sound like you", seconds=2.5)
             return False, None
         if who not in ("?", None, "me"):
             log.info("Speaking: %s (%s)", voice_id.display(who), score_txt)

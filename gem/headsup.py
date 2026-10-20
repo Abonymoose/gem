@@ -32,12 +32,65 @@ def _busy():
     return st.in_call or st.gaming or st.snoozed or hype.state["in_game"]
 
 
+AWAY_AFTER_S = 10 * 60
+away = {"on": False, "since": 0.0, "missed": []}
+
+
+def _idle():
+    from .winapi import idle_seconds
+    try:
+        return idle_seconds()
+    except Exception:
+        return 0.0
+
+
+def note_missed(title, message):
+    """Alerts that happen while nobody's at the PC go into a 'while you were away' summary."""
+    if away["on"]:
+        away["missed"].append((time.time(), title, message))
+        del away["missed"][:-12]
+
+
+def _watching():
+    """Not touching the mouse because you're watching something isn't being away."""
+    from .winapi import foreground_is_fullscreen
+    try:
+        from .skills.power_auto import _active_media
+        return foreground_is_fullscreen() or _active_media()
+    except Exception:
+        return True
+
+
+def _check_presence():
+    idle = _idle()
+    if idle > AWAY_AFTER_S and not away["on"]:
+        if _watching():
+            return
+        away.update(on=True, since=time.time() - idle)
+    elif away["on"] and idle < 5:
+        mins = int((time.time() - away["since"]) // 60)
+        missed = away["missed"]
+        away.update(on=False, missed=[])
+        if missed and not svc.state.in_call:
+            rows = [{"icon": "bell", "text": "%s · %s" % (time.strftime("%I:%M %p", time.localtime(t)).lstrip("0"),
+                                                          m if t_ in ("Reminder", "Heads-up") else "%s: %s" % (t_, m))}
+                    for t, t_, m in missed[-5:]]
+            first = missed[0][2].rstrip(".")
+            say_text = ("Welcome back. While you were away: %s%s." % (first[:80], " and %d more" % (len(missed) - 1)
+                                                                     if len(missed) > 1 else ""))
+            from .runtime import say
+            say(say_text, card={"kind": "briefing", "greeting": "While you were away (%d min)" % mins, "rows": rows})
+
+
 def tell(key, text, cooldown):
-    """Show a heads-up unless the same one was shown recently; hold it while you're busy."""
+    """Show a heads-up unless the same one was shown recently; hold it while you're busy or away."""
     now = time.time()
     if now - _last_said.get(key, 0) < cooldown:
         return
     _last_said[key] = now
+    if away["on"]:
+        away["missed"].append((now, "Heads-up", text))
+        return
     if _busy():
         _pending.append((key, text, now))
         return
@@ -87,6 +140,41 @@ def _rain():
             mins = max(5, int((when - now).total_seconds() // 60 // 5 * 5))
             tell("rain", "Rain likely in about %d minutes" % mins, 3 * 3600)
             return
+
+
+def _date_phrase(key, when):
+    """'aarav's birthday' -> "Aarav's birthday is tomorrow"; 'exam' -> 'Your exam is tomorrow'."""
+    if "'s " in key:
+        return "%s is %s" % (key[:1].upper() + key[1:], when)
+    return "Your %s is %s" % (key, when)
+
+
+def _dates():
+    import datetime
+    from .skills.world import store
+    now = datetime.datetime.now()
+    today = now.date()
+    for key, d in (store.data.get("dates") or {}).items():
+        if key in ("birthday", "my birthday"):
+            continue                                    # your own birthday has its own surprise
+        try:
+            day = datetime.date(today.year, int(d["month"]), int(d["day"]))
+        except (KeyError, ValueError, TypeError):
+            continue
+        if day == today and now.hour >= 8:
+            tell("date:%s:%s" % (key, today), _date_phrase(key, "today"), 24 * 3600)
+        elif day == today + datetime.timedelta(days=1) and now.hour >= 17:
+            tell("date:%s:%s" % (key, day), _date_phrase(key, "tomorrow"), 24 * 3600)
+
+
+def _air():
+    from .skills.web import _air_now
+    city = (svc.config.get("home_city") or "").strip()
+    if not city:
+        return
+    aqi, _, _ = _air_now(city)
+    if aqi and aqi >= 151:
+        tell("aqi", "Air quality is unhealthy now (AQI %d)" % aqi, 12 * 3600)
 
 
 _seen_downloads = {}
@@ -163,6 +251,20 @@ def _app_matches(app, proc):
     return a == name or a in name or a in proc.replace(" ", "")
 
 
+def _watch_presence():
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+    while True:
+        time.sleep(3)
+        try:
+            _check_presence()
+        except Exception:
+            log.debug("Presence check failed", exc_info=True)
+
+
 def _watch_apps():
     from .winapi import foreground_window, window_process_name
     last = ""
@@ -193,7 +295,8 @@ def _loop():
         time.sleep(60)
         n += 1
         c = cfg()
-        for name, fn, every in (("rain", _rain, 20), ("downloads", _downloads, 1), ("pc", _pc, 1)):
+        for name, fn, every in (("rain", _rain, 20), ("downloads", _downloads, 1), ("pc", _pc, 1),
+                                ("dates", _dates, 30), ("air", _air, 60)):
             if c.get(name, True) and n % every == 0:
                 try:
                     fn()
@@ -205,3 +308,4 @@ def _loop():
 def start():
     threading.Thread(target=_loop, name="heads-up", daemon=True).start()
     threading.Thread(target=_watch_apps, name="app-reminders", daemon=True).start()
+    threading.Thread(target=_watch_presence, name="presence", daemon=True).start()

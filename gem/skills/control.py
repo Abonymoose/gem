@@ -131,7 +131,10 @@ def help_text():
             "passwords, recap your day, explain what's on your screen, tidy your downloads, clip your games, "
             "mute you on Discord, test your internet speed, suggest something to watch or play, learn your voice "
             "so I only respond to you, recognise or ignore family members, remember screens you save, clip your "
-            "best game moments, give you heads-ups, work offline for the basics, and answer questions. "
+            "best game moments, give you heads-ups, work offline for the basics, find your files, turn off the PC "
+            "when your movie ends, skip around in videos, play trivia, play rain or ocean sounds, record voice notes, "
+            "make images and wallpapers, switch your speakers, record your screen, check the air quality, and answer "
+            "questions. "
             "Say shut up for a bit when you need quiet.")
 
 

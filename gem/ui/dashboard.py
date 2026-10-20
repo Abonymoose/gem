@@ -906,7 +906,7 @@ FIELDS = [
     ("Listening", "Voice lock strictness (only respond to your voice)", "voice_lock.threshold", "choice",
      [("Relaxed", 0.38), ("Normal", 0.45), ("Strict", 0.52)], False),
     ("Listening", "Keep learning my voice from push-to-talk", "voice_lock.learn_from_push_to_talk", "bool", None, False),
-    ("Listening", "Voice lock in push-to-talk too", "voice_lock.in_push_to_talk", "bool", None, False),
+    ("Listening", "Voice lock while holding Caps Lock too", "voice_lock.in_push_to_talk", "bool", None, False),
     ("Listening", "Auto-clip hype moments in games", "auto_clip.enabled", "bool", None, False),
     ("Keys", "Hold time before Caps Lock counts as held (ms)", "keys.hold_ms", "int", (120, 600), True),
     ("Keys", "Triple-tap window (ms)", "keys.triple_tap_ms", "int", (400, 1500), True),

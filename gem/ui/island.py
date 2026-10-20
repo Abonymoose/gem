@@ -150,12 +150,14 @@ class Island(QWidget):
             seconds = 8.0 if kind == "pending" else max(3.5, len(self.content.text) / 12.0)
         if kind in ("timer", "focus", "weather", "system", "todo", "timers", "schedule", "briefing", "music", "web",
                     "routine", "draft", "calc", "clips", "habit", "world",
-                    "countdown", "usage", "speed", "picks", "tidy", "screen", "people"):
+                    "countdown", "usage", "speed", "picks", "tidy", "screen", "people", "files"):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)
         if kind == "voice":
             seconds = 8.0 if (card or {}).get("done") else 45.0      # training: stay up while you read the line
+        if kind == "trivia":
+            seconds = 9.0 if (card or {}).get("done") else 40.0      # time to think
         seconds *= float((svc.config.get("appearance") or {}).get("card_seconds", 1.0) or 1.0)
         self.card_until = time.monotonic() + seconds
         self.toast_until = 0.0

@@ -473,9 +473,20 @@ class Voice:
 
     # ── Playback ─────────────────────────────────────────────────────────────
 
+    def _night_factor(self):
+        """Softer late at night so Gem doesn't wake anyone (voice.quiet_hours, e.g. [23, 7])."""
+        hours = self.cfg.get("quiet_hours") or [23, 7]
+        try:
+            start, end = int(hours[0]), int(hours[1])
+        except (TypeError, ValueError, IndexError):
+            return 1.0
+        h = time.localtime().tm_hour
+        late = (start <= h or h < end) if start > end else (start <= h < end)
+        return float(self.cfg.get("quiet_volume", 0.55)) if late else 1.0
+
     def _play(self, gen, frames, rate):
         """Play 16-bit mono frames from a primed-on-start generator. False if interrupted."""
-        volume = float(self.cfg.get("volume", 0.9))
+        volume = float(self.cfg.get("volume", 0.9)) * self._night_factor()
         finished = threading.Event()
 
         def feeder():
