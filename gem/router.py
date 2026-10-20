@@ -102,7 +102,14 @@ def _rules():
     @rule(r"^(?:shut up|be quiet|quiet|stay quiet|keep quiet|stop talking|silence|shush|hush|zip it|pipe down|"
           r"mute yourself|don't talk|go to sleep|sleep|take a break|give me (?:a )?(?:minute|moment|second))\b(.*)$")
     def _(m, t):
-        secs = parse_duration(m.group(1))
+        rest = m.group(1).strip()
+        # Only "quiet" + an optional length; "sleep timer 30 minutes" or "stop talking about X" are other things.
+        if re.match(r"(?:timer|mode|tracker|schedule|about|on|with)\b", rest):
+            return None
+        secs = parse_duration(rest)
+        if rest and not secs and rest not in ("for a bit", "for a while", "for a second", "for a moment", "for",
+                                              "for now", "now", "already", "a bit"):
+            return None
         return Match("snooze", {"minutes": secs / 60.0} if secs else {})
 
     @rule(r"\b(?:shut up|be quiet|stop talking|keep quiet|not talking to you)\b", safe=False)
@@ -211,6 +218,121 @@ def _rules():
     @rule(r"^copy (?:that|this|it|your (?:last )?answer|what you said|the answer)(?: to (?:my |the )?clipboard)?$")
     def _(m, t):
         return Match("copy_answer")
+
+    # Time zones and world clock
+    @rule(r"^(?:convert |what(?:'s| is) )?(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2}|noon|midnight) (?:in )?(.+?)"
+          r"(?: time)? (?:in|to|into|for) (.+?)(?: time)?$")
+    def _(m, t):
+        return Match("time_convert", {"time": m.group(1), "from_place": m.group(2), "to_place": m.group(3)})
+
+    @rule(r"^when it's (.+?) in (.+?) what time is it(?: (?:here|for me|in (.+)))?$")
+    def _(m, t):
+        return Match("time_convert", {"time": m.group(1), "from_place": m.group(2), "to_place": m.group(3) or "here"})
+
+    @rule(r"^(?:what(?:'s| is) the )?(?:current )?time (?:in|at) (.+)$|^what time is it (?:in|at) (.+)$|"
+          r"^how far (?:ahead|behind) is (.+)$|^what(?:'s| is) the time difference (?:with|to) (.+)$")
+    def _(m, t):
+        return Match("time_in", {"place": next(g for g in m.groups() if g)})
+
+    @rule(r"^(?:show (?:me )?)?(?:my |the )?world clock$")
+    def _(m, t):
+        return Match("world_clock")
+
+    @rule(r"^add (.+?) to (?:my |the )?world clock$")
+    def _(m, t):
+        return Match("world_clock", {"add": m.group(1)})
+
+    @rule(r"^(?:remove|delete) (.+?) from (?:my |the )?world clock$")
+    def _(m, t):
+        return Match("world_clock", {"remove": m.group(1)})
+
+    # Countdowns and saved dates
+    @rule(r"^(?:how many (?:days|weeks|sleeps) |how long )(?:until|till|til|to|before|left until) (.+)$|"
+          r"^(?:days|time) (?:until|till|left until|left till) (.+)$|^countdown to (.+)$|"
+          r"^when(?:'s| is) (?:it )?(.+?)(?: this year| next year)?$")
+    def _(m, t):
+        to = next(g for g in m.groups() if g)
+        if m.group(4):
+            # "when is X" only for holidays and saved dates; "when is my next class" etc. go elsewhere.
+            from .skills import world
+            key = re.sub(r"^(?:my|the)\s+", "", to)
+            if key not in world.HOLIDAYS and (not to.startswith("my ") or
+                                              re.search(r"\b(?:next|class|lesson|period|alarm|timer|reminder)\b", to)):
+                return None
+        return Match("countdown", {"to": to})
+
+    @rule(r"^my ([a-z' ]{3,30}?) is (?:on )?(.+)$", safe=False)
+    def _(m, t):
+        from .skills import world
+        if len(m.group(1).split()) > 3 or not world.parse_date(m.group(2)):
+            return None
+        return Match("save_date", {"name": m.group(1), "date": m.group(2)}, False)
+
+    # Scheduled commands
+    @rule(r"^(?:set a |start a )?sleep timer(?: for)? (.+)$|^(?:pause|stop|turn off) (?:the )?music (?:in|after) (.+)$")
+    def _(m, t):
+        secs = parse_duration(m.group(1) or m.group(2))
+        return Match("schedule_command", {"command": "pause everything", "minutes": secs / 60.0}) if secs else None
+
+    @rule(r"^pause everything$")
+    def _(m, t):
+        return Match("media_pause")
+
+    @rule(r"^(?:in|after) (\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)(?:\s*(?:and\s*)?\d+\s*"
+          r"(?:minutes?|mins?))?),?\s+(?:then\s+)?(.+)$|^at (\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight),?\s+(.+)$",
+          safe=False)
+    def _(m, t):
+        command = m.group(2) or m.group(4)
+        if not command or command.startswith(("remind", "wake")) or not (match(command) or _routine(command)):
+            return None
+        if m.group(1):
+            return Match("schedule_command", {"command": command, "minutes": parse_duration(m.group(1)) / 60.0}, False)
+        return Match("schedule_command", {"command": command, "time": m.group(3)}, False)
+
+    @rule(r"^(.+?),?\s+(?:in (\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?))|at (\d{1,2}(?::\d{2})?\s*(?:am|pm)|"
+          r"noon|midnight))$", safe=False)
+    def _(m, t):
+        command = m.group(1)
+        if command.startswith(("remind", "wake", "set a", "set an", "alarm")) or not (match(command) or _routine(command)):
+            return None
+        if m.group(2):
+            return Match("schedule_command", {"command": command, "minutes": parse_duration(m.group(2)) / 60.0}, False)
+        return Match("schedule_command", {"command": command, "time": m.group(3)}, False)
+
+    # Screen time and recap
+    @rule(r"^(?:what(?:'s| is) |show (?:me )?|check )?(?:my )?screen ?time(?: today| for today)?$")
+    def _(m, t):
+        return Match("screen_time", {"period": "today"})
+
+    @rule(r"^(?:what(?:'s| is) |show (?:me )?)?(?:my )?screen ?time (?:this|for the) week$")
+    def _(m, t):
+        return Match("screen_time", {"period": "week"})
+
+    @rule(r"^how (?:long|much time) (?:have i|did i) (?:been on|spent on|spend on|used|use|played|play) (.+?)"
+          r"(?: today| this week)?$")
+    def _(m, t):
+        return Match("screen_time", {"app": m.group(1), "period": "week" if "this week" in t else "today"})
+
+    @rule(r"^(?:what did i do today|recap (?:my |the )?day|how was my day|day recap|summari[sz]e (?:my )?day|"
+          r"what have i done today)$")
+    def _(m, t):
+        return Match("day_recap")
+
+    # Little helpers
+    @rule(r"^(?:generate|make|create|give me) (?:me )?(?:a )?(?:(?:strong|new|random|secure) )*password"
+          r"(?: (?:with|of) (\d+) (?:characters|chars|letters))?$")
+    def _(m, t):
+        return Match("password", {"length": int(m.group(1) or 16)})
+
+    @rule(r"^(?:pick|choose|decide)(?: one)?(?: between| from| for me between)? (.+ (?:or|and) .+)$|^should i (.+ or .+)$")
+    def _(m, t):
+        opts = [o.strip() for o in re.split(r",\s*|\s+or\s+|\s+and\s+", m.group(1) or m.group(2)) if o.strip()]
+        return Match("choose", {"options": opts}) if len(opts) >= 2 else None
+
+    @rule(r"^(?:what did i note about|find (?:my )?notes? (?:about|on)|search (?:my )?notes for|"
+          r"do i have (?:a |any )?notes? (?:about|on)) (.+)$")
+    def _(m, t):
+        return Match("notes_search", {"query": m.group(1)})
 
     # Reply mode
     @rule(r"^(?:i'm |i am )?(?:going |stepping |heading )?(?:away|afk)(?: mode)?(?: for (.+)| until (.+))?$|"
@@ -763,6 +885,11 @@ def _rules():
 
 _RULES = None
 _raw = ""
+
+
+def _routine(text):
+    from .skills import routines
+    return routines.find(text)
 
 
 def match(text, raw=""):

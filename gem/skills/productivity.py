@@ -3,6 +3,7 @@ import datetime
 import difflib
 import logging
 import os
+import re
 import time
 
 from ..actions import ActionError, action
@@ -122,6 +123,25 @@ def notes_open():
         open(NOTES_FILE, "a", encoding="utf-8").close()
     os.startfile(NOTES_FILE)
     return "Opening your notes."
+
+
+@action("notes_search", "Find notes that mention something.", "query: str")
+def notes_search(query=""):
+    # Notes plus the things Gem was asked to remember; "wi-fi" matches "wifi".
+    def flat(s):
+        return re.sub(r"[^a-z0-9 ]", "", s.lower())
+    words = [w for w in flat(query or "").split() if len(w) > 2 and w not in ("the", "about", "note", "notes", "and")]
+    lines = []
+    if os.path.exists(NOTES_FILE):
+        with open(NOTES_FILE, "r", encoding="utf-8") as f:
+            lines = [l.strip()[2:].split("  ", 1)[-1] for l in f if l.startswith("- ")]
+    lines += [f for f in memory.data.get("facts") or [] if isinstance(f, str)]
+    if not lines:
+        return "You don't have any notes yet."
+    hits = [l for l in lines if words and all(w in flat(l) for w in words)]
+    if not hits:
+        return "I couldn't find a note about %s." % query
+    return "%s note%s: %s." % (len(hits), "" if len(hits) == 1 else "s", ". ".join(hits[-3:]))
 
 
 # ── Focus sessions ───────────────────────────────────────────────────────────

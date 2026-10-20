@@ -76,6 +76,8 @@ DEFAULTS = {
         "rate": "+5%",
         "volume": 0.9,
         "speak_in_calls": False,
+        "duck_others": True,                  # lower other apps while you talk to Gem or she speaks
+        "duck_level": 0.3,
         "speak_in_gaming": False,
     },
 

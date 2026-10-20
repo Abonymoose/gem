@@ -66,6 +66,8 @@ def restart():
 def _quit():
     log.info("Shutting down")
     try:
+        if svc.ducker:
+            svc.ducker.release_all()
         if svc.lights:
             svc.lights.close()
         if svc.tray:
@@ -85,6 +87,7 @@ def _on_press():
     talk = st.effective_mode == PUSH_TO_TALK
     if talk:
         svc.sounds.play("listen_start")     # right away, before you start speaking
+        svc.ducker.duck("listen")
     svc.listener.begin_hold(talk=talk)
     svc.lights.show("talk" if talk else "mute")
     if talk:
@@ -97,6 +100,7 @@ def _on_release(was_tap):
     st.update(key_held=False)
     svc.listener.end_hold(discard=was_tap)
     svc.lights.show("normal")
+    svc.ducker.unduck("listen", delay=0.6)
     if talk and not was_tap:
         # After the recording tail, so the tone isn't captured.
         threading.Timer(0.32, svc.sounds.play, args=("listen_end",)).start()
@@ -155,6 +159,13 @@ def main():
     from .ui.tray import Tray
 
     svc.sounds = Sounds(cfg.setdefault("sounds", {"cues": True}), st)
+    from .ducking import Ducker
+    svc.ducker = Ducker(cfg["voice"])
+    def duck_on_state(s, ch):
+        for key in ("speaking", "thinking"):
+            if key in ch:
+                svc.ducker.duck(key) if ch[key] else svc.ducker.unduck(key, delay=0.3)
+    st.subscribe(duck_on_state)
     svc.voice = Voice(st, cfg["voice"],
                       on_caption=lambda text, secs, card=None: overlay.caption(gem=text, seconds=secs, card=card))
     svc.lights = KeyboardLights(enabled=cfg["lights"].get("enabled", True), animate=cfg["lights"].get("animate", True))
@@ -168,7 +179,9 @@ def main():
 
     index.refresh_async()
     from .skills.clipboard import start_watcher
+    from .skills.insights import start_tracker
     start_watcher()
+    start_tracker()
     svc.assistant.start()
     svc.listener.start()
     svc.scheduler.start()

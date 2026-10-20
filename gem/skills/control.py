@@ -126,8 +126,9 @@ def help_text():
             "I can open and close apps and websites, control volume and music, set timers, alarms and reminders, "
             "keep your to-do list and notes, run focus sessions, tell you the weather and your schedule, "
             "summarize, rewrite or read out selected text, take dictation and screenshots, do quick maths and "
-            "conversions, track habits like water, run a stopwatch, paste things you copied earlier, draft replies, "
-            "and answer questions. "
+            "conversions, tell the time anywhere in the world, count down to dates, run commands later, track your "
+            "screen time and habits, run a stopwatch, paste things you copied earlier, draft replies, make "
+            "passwords, recap your day, and answer questions. "
             "Say shut up for a bit when you need quiet.")
 
 

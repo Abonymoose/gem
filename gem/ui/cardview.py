@@ -199,7 +199,8 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "todo": "TO-DO", "music": "NOW PLAYING", "system": "THIS PC", "schedule": "SCHEDULE", "volume": "VOLUME",
           "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
           "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT", "calc": "",
-          "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": ""}
+          "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": "",
+          "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME"}
 
 
 class CardContent:
@@ -244,6 +245,8 @@ class CardContent:
             label = (c.get("title") or "Alarm").upper()
         if self.kind == "focus" and c.get("phase") == "break":
             label = "BREAK"
+        if self.kind == "usage" and c.get("period"):
+            label += " · " + c["period"].upper()
         if self.kind == "habit" and c.get("habit"):
             label = c["habit"].upper() + (" · %d-DAY STREAK" % c["streak"] if c.get("streak", 0) > 1 else "")
         if self.kind == "draft" and c.get("title"):
@@ -301,6 +304,12 @@ class CardContent:
             return _wrap_height(F_BODY, self.text, w) + 40
         if k == "calc":
             return 66
+        if k == "world":
+            return 40 * max(1, min(6, len(c.get("rows") or [])))
+        if k == "countdown":
+            return 70
+        if k == "usage":
+            return 54 + 30 * min(6, len(c.get("rows") or []))
         if k == "clips":
             return 28 * max(1, min(8, len(c.get("items") or [])))
         if k == "reading":
@@ -746,3 +755,67 @@ class CardContent:
             p.setFont(T.font(11, QFont.DemiBold if today else QFont.Normal))
             p.setPen(T.TEXT if today else T.TEXT_FAINT)
             p.drawText(QRectF(r.left() - 4, y + 66, bw + 8, 18), Qt.AlignCenter, label)
+
+    def _paint_world(self, p, x, y, w):
+        for i, r in enumerate((self.card.get("rows") or [])[:6]):
+            yy = y + i * 40
+            place = "Your time" if r.get("place") == "Here" else r.get("place", "")
+            p.setFont(F_TITLE)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x, yy, w * 0.55, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_TITLE).elidedText(place, Qt.ElideRight, int(w * 0.55)))
+            sub = " · ".join(v for v in (r.get("day") if r.get("day") not in ("", "Today") else "", r.get("offset", ""))
+                             if v and v != "same time")
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, yy + 20, w * 0.6, 18), Qt.AlignLeft | Qt.AlignVCenter, sub)
+            p.setFont(T.font(24, QFont.Light))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + w * 0.45, yy, w * 0.55, 38), Qt.AlignRight | Qt.AlignVCenter, r.get("time", ""))
+
+    def _paint_countdown(self, p, x, y, w):
+        c = self.card
+        days = c.get("days", 0)
+        p.setFont(T.font(44, QFont.Light))
+        p.setPen(T.TEXT)
+        num = c.get("label", "") if c.get("time_only") else ("Today" if days == 0 else str(days))
+        nw = QFontMetrics(p.font()).horizontalAdvance(num)
+        p.drawText(QRectF(x, y - 6, nw + 4, 56), Qt.AlignLeft | Qt.AlignVCenter, num)
+        if days:
+            p.setFont(F_TITLE)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x + nw + 10, y + 18, 80, 26), Qt.AlignLeft | Qt.AlignVCenter, "day" if days == 1 else "days")
+        label = "" if c.get("time_only") else c.get("label", "")
+        p.setFont(F_TITLE)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x + w * 0.42, y + 4, w * 0.58, 24), Qt.AlignRight | Qt.AlignVCenter,
+                   QFontMetrics(F_TITLE).elidedText(label[:1].upper() + label[1:], Qt.ElideRight, int(w * 0.58)))
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + w * 0.42, y + 30, w * 0.58, 20), Qt.AlignRight | Qt.AlignVCenter, c.get("date", ""))
+
+    def _paint_usage(self, p, x, y, w):
+        c = self.card
+        p.setFont(T.font(30, QFont.Light))
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y - 4, w, 42), Qt.AlignLeft | Qt.AlignVCenter, c.get("total", ""))
+        rows = (c.get("rows") or [])[:6]
+        top = max([r["secs"] for r in rows] + [1])
+        for i, r in enumerate(rows):
+            yy = y + 50 + i * 30
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x, yy, 120, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(r["name"], Qt.ElideRight, 116))
+            bar = QRectF(x + 126, yy + 8, (w - 206) * r["secs"] / top, 8)
+            g = QLinearGradient(bar.topLeft(), bar.topRight())
+            g.setColorAt(0, QColor(139, 92, 246))
+            g.setColorAt(1, QColor(196, 160, 240))
+            p.setPen(Qt.NoPen)
+            p.setBrush(g)
+            p.drawRoundedRect(bar, 4, 4)
+            m = int(r["secs"] // 60)
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x + w - 74, yy, 74, 24), Qt.AlignRight | Qt.AlignVCenter,
+                       ("%dh %dm" % (m // 60, m % 60)) if m >= 60 else ("%dm" % m if m else "<1m"))

@@ -19,6 +19,8 @@ Gem lives in a **Dynamic Island**: a small black pill hugging the very top of yo
   sources, routines and screenshots. The card appears the moment Gem starts speaking.
 - **Sound cues**: soft tones when listening starts and stops, gentle bells for reminders and alarms.
   All silent during calls, quiet time and gaming.
+- **Audio ducking**: music and videos dip while you hold Caps Lock and while Gem answers, then come back to
+  exactly where they were.
 - **The Gem window**: left-click the tray icon, or say "open your settings" / "open dashboard". It has Home
   (status, quick switches, up next, recent), Reminders, Classes, To-do, Routines, Notes, Memory, History and
   Settings, so you never have to edit JSON.
@@ -101,6 +103,12 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Clipboard | "what did I copy", "paste what I copied before", "paste clip 3", "paste the link about the essay" (remembered in memory only; passwords and keys are skipped) |
 | Reading | Select text and say "read this to me"; "copy that" copies Gem's last answer |
 | Habits | "I drank a glass of water", "log 20 pushups", "I had a coffee", "how much water today" (with a weekly chart and streaks) |
+| Time zones | "what time is it in Tokyo", "3 pm EST in IST", "when it's 9 am in London what time is it here", "add Tokyo to my world clock", "world clock" |
+| Countdowns | "how many days until Christmas", "how long until Friday", "my birthday is March 3" → "days until my birthday" |
+| Later | "in 20 minutes pause the music", "open Spotify at 7 pm", "at 6 pm start study mode", "sleep timer 30 minutes" |
+| Screen time | "screen time today", "screen time this week", "how long have I been on Discord today" (tracked on this PC only) |
+| Day recap | "what did I do today": a short summary of your requests, finished to-dos, habits and screen time |
+| Extras | "generate a password" (copied to the clipboard, never spoken), "pick between pizza and tacos", "what did I note about the wifi" |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |

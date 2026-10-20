@@ -79,6 +79,8 @@ def _describe(item, now=None):
         return "%s with %s left" % (name, duration_phrase(left))
     if item["kind"] == "alarm":
         return "an alarm%s at %s" % (" for " + item["label"] if item["label"] else "", clock_phrase(at, now))
+    if item["kind"] == "command":
+        return "%s at %s" % (item["message"], clock_phrase(at, now))
     return "a reminder to %s at %s" % (item["message"], clock_phrase(at, now))
 
 
@@ -323,6 +325,46 @@ def schedule_remove(name=""):
     return "Removed %s from your schedule." % name if removed else "I couldn't find %s on your schedule." % name
 
 
+# ── Scheduled commands ───────────────────────────────────────────────────────
+
+@action("schedule_command", "Run one of Gem's commands later, e.g. 'pause the music' in 20 minutes or "
+        "'start study mode' at 7 pm.", "command: str, time?: str, minutes?: number")
+def schedule_command(command="", time=None, minutes=None):
+    command = (command or "").strip().rstrip(".")
+    at = None
+    if minutes:
+        try:
+            at = datetime.datetime.now() + datetime.timedelta(minutes=float(minutes))
+        except (TypeError, ValueError):
+            at = None
+    if at is None and time:
+        at, _ = parse_when(str(time))
+    if not command or at is None:
+        raise ActionError("What should I do, and when?")
+    _add("command", at, message=command)
+    left = (at - datetime.datetime.now()).total_seconds()
+    when = "in " + duration_phrase(round(left / 60) * 60 if left > 90 else left) if left < 3 * 3600 \
+        else "at " + clock_phrase(at)
+    return card("alarm", "Okay, I'll %s %s." % (command, when), title="Scheduled", at=at.timestamp(),
+                subtitle=command.capitalize())
+
+
+@action("media_pause", "Pause whatever is playing (does nothing if nothing is).")
+def media_pause():
+    try:
+        from pycaw.pycaw import AudioUtilities
+        import os
+        active = [s for s in AudioUtilities.GetAllSessions()
+                  if s.Process and s.Process.pid != os.getpid() and s.State == 1]
+    except Exception:
+        active = [True]
+    if not active:
+        return None
+    from ..winapi import press
+    press("play_pause")
+    return None
+
+
 # ── Stopwatch ────────────────────────────────────────────────────────────────
 
 _watch = {"started": None, "elapsed": 0.0}
@@ -415,6 +457,11 @@ class Scheduler:
     def _fire(self, item):
         if item.get("repeat_minutes"):
             self._reschedule(item)
+        if item["kind"] == "command":
+            log.info("Running scheduled command: %s", item["message"])
+            if svc.assistant:
+                svc.assistant.submit_text(item["message"])
+            return
         if item["kind"] == "timer":
             title = (item["label"].capitalize() + " timer") if item["label"] else "Timer done"
             msg = "Your %s timer is done." % item["label"] if item["label"] else "Time's up."

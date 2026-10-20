@@ -9,6 +9,7 @@ class Services:
     state = None
     voice = None
     lights = None
+    ducker = None
     sounds = None
     brain = None
     stt = None
