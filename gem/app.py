@@ -207,10 +207,15 @@ def main():
     start_watcher()
     start_tracker()
     threading.Thread(target=_ensure_shortcut, name="shortcut", daemon=True).start()
-    from . import voiceprint
+    from . import offline, voiceprint
     if (cfg.get("voice_lock") or {}).get("learn_from_push_to_talk", True) or voiceprint.store.data.get("locked"):
         threading.Thread(target=voiceprint.prepare, name="voice-model", daemon=True).start()
+    threading.Thread(target=offline.prepare, name="offline-model", daemon=True).start()
     svc.assistant.start()
+    from . import headsup, hype
+    svc.listener.on_hype, svc.listener.hype_active = hype.on_segment, hype.active
+    hype.start()
+    headsup.start()
     svc.listener.start()
     svc.scheduler.start()
     CallWatcher(cfg["calls"]).start()

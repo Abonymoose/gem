@@ -60,6 +60,11 @@ class Listener:
         self._recent = collections.deque(maxlen=10)
         self._silence = 0
         self._noise = 120.0
+        # Auto-clip: short bursts of speech while a game is in front (see hype.py).
+        self.on_hype = None                  # callback(pcm, loudness)
+        self.hype_active = None              # () -> bool
+        self._hseg = None
+        self._hsil = 0
 
     def start(self):
         threading.Thread(target=self._run, name="mic", daemon=True).start()
@@ -155,9 +160,34 @@ class Listener:
                     self._hold.append(frame)
             elif emit is None:
                 emit = self._open_mode(frame, speech)
+            hype = self._hype_mode(frame, speech, rms) if self._hold is None else None
 
         if emit:
             self._emit(*emit)
+        if hype:
+            self.on_hype(b"".join(hype[0]), float(np.mean(hype[1])))
+
+    def _hype_mode(self, frame, speech, rms):
+        """Cut short bursts (up to ~4.5 s) of speech while a game is in front, for auto-clip."""
+        if self.on_hype is None or not self.hype_active or not self.hype_active() or self.state.speaking:
+            self._hseg = None
+            return None
+        if self._hseg is None:
+            if speech:
+                self._hseg = (list(self._ring)[-6:], [rms])
+                self._hsil = 0
+            return None
+        frames, levels = self._hseg
+        frames.append(frame)
+        if speech:
+            levels.append(rms)
+            self._hsil = 0
+        else:
+            self._hsil += 1
+        if self._hsil >= 12 or len(frames) >= 150:
+            seg, self._hseg = self._hseg, None
+            return seg if len(seg[1]) >= 8 else None
+        return None
 
     def _open_mode(self, frame, speech):
         st = self.state

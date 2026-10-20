@@ -243,9 +243,14 @@ def forget(about=""):
     return "Forgotten." if removed else "I didn't have anything about that."
 
 
-@action("memories", "List remembered facts.")
+@action("memories", "List remembered facts (what Gem knows about the user).")
 def memories():
     facts = memory.data.get("facts") or []
     if not facts:
-        return "I haven't been asked to remember anything yet."
-    return "I remember that " + "; ".join(facts[-6:]) + "."
+        return "I don't know much about you yet. Tell me things, or say remember that."
+    recent = facts[-7:][::-1]
+    lower = [f.rstrip(".")[:1].lower() + f.rstrip(".")[1:] for f in recent]
+    spoken = ("Here's some of what I know: %s." % "; ".join(lower[:3]) if len(facts) <= 3 else
+              "I know %d things about you. Most recently: %s." % (len(facts), "; ".join(lower[:3])))
+    return card("briefing", spoken, greeting="What I know about you",
+                rows=[{"icon": "dot", "text": f} for f in recent])

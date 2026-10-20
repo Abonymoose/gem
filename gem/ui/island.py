@@ -76,6 +76,7 @@ class Island(QWidget):
         self.w, self.h, self.r = Spring(150), Spring(0), Spring(14)
         self.opacity = 0.0
         self.glow = 0.0
+        self.fx = None                  # (kind, start time, seconds): one-off effects
         self.mode = "launch"
         self.shown = ("launch", 0)
         self.content_alpha = 1.0
@@ -149,7 +150,7 @@ class Island(QWidget):
             seconds = 8.0 if kind == "pending" else max(3.5, len(self.content.text) / 12.0)
         if kind in ("timer", "focus", "weather", "system", "todo", "timers", "schedule", "briefing", "music", "web",
                     "routine", "draft", "calc", "clips", "habit", "world",
-                    "countdown", "usage", "speed", "picks", "tidy", "screen"):
+                    "countdown", "usage", "speed", "picks", "tidy", "screen", "people"):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)
@@ -166,6 +167,40 @@ class Island(QWidget):
     def pulse(self):
         self.w.v += 140.0
         self.h.v += 30.0
+
+    def play_fx(self, kind, seconds):
+        self.fx = (kind, self.t, max(0.3, seconds))
+        self.pulse()
+
+    def _fx_progress(self):
+        if not self.fx:
+            return None, 0.0
+        kind, start, dur = self.fx
+        k = (self.t - start) / dur
+        if k >= 1.0:
+            self.fx = None
+            return None, 0.0
+        return kind, k
+
+    def _paint_confetti(self, p, rect, k):
+        colors = [QColor(236, 72, 153), QColor(139, 92, 246), QColor(56, 189, 248), QColor(250, 204, 21),
+                  QColor(52, 211, 153), QColor(251, 146, 60)]
+        fade = min(1.0, (1 - k) * 4)
+        for i in range(46):
+            seed = i * 7919
+            x = rect.left() + (seed % 997) / 997.0 * rect.width()
+            speed = 40 + (seed % 61)
+            y = ((self.t - self.fx[1]) * speed + (seed % 113)) % (rect.height() + 20) - 10
+            x += math.sin(self.t * 3 + i) * 6
+            p.save()
+            p.translate(x, y)
+            p.rotate((self.t * 200 + i * 37) % 360)
+            p.setPen(Qt.NoPen)
+            c = QColor(colors[i % len(colors)])
+            c.setAlphaF(0.9 * fade)
+            p.setBrush(c)
+            p.drawRoundedRect(QRectF(-3, -1.5, 6, 3), 1, 1)
+            p.restore()
 
     # ── State → what to show ─────────────────────────────────────────────────
 
@@ -399,6 +434,8 @@ class Island(QWidget):
         self.levels.append(min(1.0, level * 3.2))
         target_glow = 1.0 if mode == "listening" else (0.6 + 0.4 * math.sin(self.t * 6)) if (
             mode == "card" and self.content.kind == "alert") else 0.0
+        if self.fx and self.fx[0] == "confetti":
+            target_glow = max(target_glow, 0.85)
         self.glow += (target_glow - self.glow) * (1 - math.exp(-10 * dt))
         self.crystal.step(dt, self._mood(mode), level)
 
@@ -412,7 +449,7 @@ class Island(QWidget):
             self.update()
         elif self.isVisible():
             self.hide()
-        animating = abs(self.w.v) + abs(self.h.v) > 1 or mode not in ("idle", "hidden", "activity")
+        animating = abs(self.w.v) + abs(self.h.v) > 1 or mode not in ("idle", "hidden", "activity") or bool(self.fx)
         return visible, animating
 
     # ── Painting ─────────────────────────────────────────────────────────────
@@ -443,6 +480,14 @@ class Island(QWidget):
         w, h = self.w.x, self.h.x
         rect = QRectF((self.width() - w) / 2, 0, w, h)
         path = self._shape(rect, self.r.x)
+        fx, fx_k = self._fx_progress()
+        if fx == "roll":
+            # Spins like a coin, twice, easing out.
+            ease = 1 - (1 - fx_k) ** 3
+            sx = math.cos(ease * 4 * math.pi)
+            p.translate(rect.center().x(), 0)
+            p.scale(sx if abs(sx) > 0.02 else 0.02, 1.0)
+            p.translate(-rect.center().x(), 0)
 
         if self.glow > 0.02:
             boost = 0.7 + 0.5 * min(1.0, max(self.levels) if self.levels else 0)
@@ -470,6 +515,9 @@ class Island(QWidget):
         p.setClipPath(path)
         p.setOpacity(self.opacity * self.content_alpha)
         getattr(self, "_paint_" + self.shown[0], lambda *_: None)(p, rect)
+        if fx == "confetti":
+            p.setOpacity(self.opacity)
+            self._paint_confetti(p, rect, fx_k)
         p.end()
 
     # Row helpers -------------------------------------------------------------

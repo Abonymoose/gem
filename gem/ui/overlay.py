@@ -35,6 +35,7 @@ class Bridge(QObject):
     command_bar = Signal()
     dashboard = Signal(str)
     quit = Signal()
+    fx = Signal(str, float)
 
 
 class CommandBar(QWidget):
@@ -126,6 +127,7 @@ class Overlay:
         self.bridge.command_bar.connect(self.open_command_bar_now)
         self.bridge.dashboard.connect(self._open_dashboard)
         self.bridge.quit.connect(self.app.quit)
+        self.bridge.fx.connect(lambda kind, secs: self.island.play_fx(kind, secs))
 
         self.screen_geo = QGuiApplication.primaryScreen().geometry()
         QGuiApplication.primaryScreen().geometryChanged.connect(self._screen_changed)
@@ -158,6 +160,10 @@ class Overlay:
 
     def flash(self, seconds=2.5):
         self.bridge.pulse.emit()
+
+    def fx(self, kind, seconds=1.2):
+        """A one-off island effect ("roll", "confetti")."""
+        self.bridge.fx.emit(kind, float(seconds))
 
     def open_command_bar(self):
         self.bridge.command_bar.emit()

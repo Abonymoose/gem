@@ -109,6 +109,23 @@ DEFAULTS = {
         "in_push_to_talk": False,
     },
 
+    # In a game, shout one of these (or say "clip that") and Gem clips the last 30 seconds with Game Bar.
+    # Checked on this PC only. loudness_ratio: how much louder than your normal game voice counts as hype.
+    "auto_clip": {
+        "enabled": True,
+        "phrases": ["let's go", "lets go", "no way", "oh my god", "clip that", "clip it", "what a shot", "insane",
+                    "get in", "yes yes yes", "that was crazy", "no shot", "what was that"],
+        "cooldown_seconds": 25,
+        "loudness_ratio": 1.35,
+        "only_my_voice": True,
+    },
+
+    # Gem speaks up first: rain soon (needs your city), finished downloads, a PC that's struggling, low battery.
+    "heads_up": {"rain": True, "downloads": True, "pc": True},
+
+    # Remember lasting things you mention in conversation ("I main Jett") without "remember that".
+    "auto_memory": True,
+
     # "Mute me" / "deafen me": must match Toggle Mute / Toggle Deafen in Discord's Keybinds settings.
     "discord": {
         "mute_keys": "ctrl+shift+m",

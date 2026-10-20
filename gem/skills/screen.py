@@ -19,7 +19,8 @@ INSTRUCTION = (
     "text). If it's an error, say what it means and the most likely fix. If you can't make it out, say so.")
 
 
-def _capture():
+def grab():
+    """(PIL image of the monitor you're on, active window title), with the island hidden."""
     from PIL import ImageGrab
     if svc.overlay:
         svc.overlay.suppress(1.2)            # keep the island out of the picture
@@ -29,9 +30,18 @@ def _capture():
     img = ImageGrab.grab(bbox=box, all_screens=True) if box else ImageGrab.grab()
     img = img.convert("RGB")
     img.thumbnail((1600, 1600))
+    return img, window_title(hwnd) if hwnd else ""
+
+
+def data_url(img):
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=82)
-    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(), window_title(hwnd) if hwnd else ""
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _capture():
+    img, title = grab()
+    return data_url(img), title
 
 
 @action("explain_screen", "Look at the user's screen and answer a question about it: explain an error, summarize "

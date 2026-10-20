@@ -9,7 +9,7 @@ import threading
 import time
 from collections import deque
 
-from . import actions, router, voiceprint
+from . import actions, automemory, eggs, router, voiceprint
 from .audio import Utterance
 from .brain import BrainUnavailable
 from .cards import card_of
@@ -138,14 +138,19 @@ class Assistant:
         st = svc.state
         explicit = item.source in ("ptt", "typed")
         text = item.text
+        who = None
+        svc.brain.speaker = None
         if not text:
-            if self._voice_rejected(item):
+            proceed, who = self._who_is_speaking(item)
+            if not proceed:
                 return
+            if who not in (None, "me"):
+                svc.brain.speaker = voice_id.describe(who)
             if explicit:
                 st.update(thinking=True)
             text = svc.stt.transcribe(item.audio)
             if text and item.source == "ptt":
-                voice_id.learn_async(item.audio)
+                voice_id.learn_async(item.audio, who)
         if not text:
             if item.source == "ptt":
                 caption("I didn't catch that.", seconds=2.5)
@@ -246,22 +251,33 @@ class Assistant:
         self._respond(spoken, text, item.source, names, card=cards[0] if cards else None)
 
     @staticmethod
-    def _voice_rejected(item):
-        """Voice lock: speech that doesn't sound like you is dropped before it's even transcribed."""
-        if not item.audio or voice_id.training_active() or not voiceprint.locked():
-            return False
-        ptt = item.source == "ptt"
-        if item.source != "open" and not (ptt and voice_id.cfg().get("in_push_to_talk")):
-            return False
-        ok, sc = voiceprint.check(item.audio, voice_id.base_threshold())
-        if ok:
-            log.debug("Voice lock: sounds like you (%.2f)", sc)
-            return False
-        log.info("Voice lock: ignored speech that doesn't sound like you (%s)",
-                 "too short to tell" if sc is None else "%.2f" % sc)
-        if ptt:
-            caption("That didn't sound like you", seconds=2.5)
-        return True
+    def _who_is_speaking(item):
+        """Voice lock and family voices, before anything is transcribed. Returns (go ahead, who):
+        who is "me", a known person's key, or None when nobody was identified."""
+        if not item.audio or voice_id.training_active() or not voiceprint.model_ready():
+            return True, None
+        ptt, lock, blocked = item.source == "ptt", voiceprint.locked(), voiceprint.blocked_names()
+        strict_ptt = ptt and lock and voice_id.cfg().get("in_push_to_talk")
+        if item.source == "open":
+            needed = lock or bool(voiceprint.people())
+        else:
+            needed = bool(blocked) or strict_ptt
+        if not needed:
+            return True, None
+        who, sc = voiceprint.hear(item.audio, voice_id.base_threshold())
+        score_txt = "too short to tell" if sc is None else "%.2f" % sc
+        if who in blocked:
+            log.info("Ignored %s (blocked, %s)", voice_id.display(who), score_txt)
+            voice_id.greet_blocked(who)
+            return False, who
+        if who in ("?", None) and (item.source == "open" and lock or strict_ptt):
+            log.info("Voice lock: ignored speech that doesn't sound like you (%s)", score_txt)
+            if ptt:
+                caption("That didn't sound like you", seconds=2.5)
+            return False, None
+        if who not in ("?", None, "me"):
+            log.info("Speaking: %s (%s)", voice_id.display(who), score_txt)
+        return True, (None if who == "?" else who)
 
     @staticmethod
     def _probably_chatter(norm):
@@ -275,6 +291,9 @@ class Assistant:
         if action_names != ["snooze"]:
             svc.state.update(last_reply_at=time.time())
         svc.brain.remember_exchange(text, source, str(spoken or ""), action_names)
+        automemory.consider(text, action_names, source)
+        if spoken or action_names:
+            eggs.after_reply(source)
         try:
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"t": time.time(), "source": source, "you": text, "gem": str(spoken or ""),

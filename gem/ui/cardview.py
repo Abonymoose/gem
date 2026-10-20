@@ -203,7 +203,7 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": "",
           "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME",
           "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED",
-          "voice": "VOICE TRAINING"}
+          "voice": "VOICE TRAINING", "people": "VOICES I KNOW", "color": "UNDER YOUR MOUSE"}
 
 
 class CardContent:
@@ -237,6 +237,8 @@ class CardContent:
 
     def _label(self):
         c = self.card or {}
+        if c.get("header"):
+            return c["header"].upper()
         label = LABELS.get(self.kind, "")
         if self.kind == "weather" and c.get("city"):
             label += " · " + c["city"].upper()
@@ -259,8 +261,12 @@ class CardContent:
         if self.kind == "picks" and c.get("title"):
             label = c["title"].upper()
         if self.kind == "voice":
-            label = "VOICE LOCK ON" if c.get("done") else "VOICE TRAINING · %d OF %d" % (c.get("step", 0) + 1,
-                                                                                     c.get("total", 5))
+            who = c.get("person")
+            if c.get("done"):
+                label = "%s'S VOICE LEARNED" % who.upper() if who else "VOICE LOCK ON"
+            else:
+                label = "%s · %d OF %d" % ("LEARNING %s'S VOICE" % who.upper() if who else "VOICE TRAINING",
+                                          c.get("step", 0) + 1, c.get("total", 5))
         return label
 
     def height(self, w):
@@ -320,6 +326,10 @@ class CardContent:
             return 54 + 30 * min(6, len(c.get("rows") or []))
         if k == "speed":
             return 80
+        if k == "color":
+            return 60
+        if k == "people":
+            return 34 * (min(6, len(c.get("rows") or [])) + (1 if c.get("me") else 0))
         if k == "voice":
             if c.get("done"):
                 return _wrap_height(F_BODY, self.text, w) + 30
@@ -601,6 +611,10 @@ class CardContent:
                 draw_check(p, x + 3, y + 1, 16, False)
             else:
                 draw_bell(p, x + 11, y + 10, 16, T.SOFT) if icon == "bell" else None
+                if icon == "dot":
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(T.alpha(T.LAVENDER, 0.9))
+                    p.drawEllipse(QRectF(x + 7, y + 7, 7, 7))
                 if icon == "class":
                     p.setPen(Qt.NoPen)
                     p.setBrush(T.alpha(T.VIOLET, 0.9))
@@ -634,7 +648,8 @@ class CardContent:
             self._paint_text(p, x, y, w)
             return
         h = min(220, int(w * self._image.height() / max(1, self._image.width())))
-        target = QRectF(x, y, w, h)
+        iw = min(w, h * self._image.width() / max(1, self._image.height()))     # keep the aspect (QR codes stay square)
+        target = QRectF(x + (w - iw) / 2, y, iw, h)
         path = QPainterPath()
         path.addRoundedRect(target, 12, 12)
         p.save()
@@ -643,7 +658,9 @@ class CardContent:
         p.restore()
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_DIM)
-        p.drawText(QRectF(x, y + h + 6, w, 18), Qt.AlignLeft | Qt.AlignVCenter, "Saved to Desktop · copied")
+        note = self.card.get("note") or "Saved to Desktop · copied"
+        p.drawText(QRectF(x, y + h + 6, w, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(F_SMALL).elidedText(note, Qt.ElideRight, int(w)))
 
     def _paint_confirm(self, p, x, y, w):
         self._paint_text(p, x, y, w)
@@ -873,6 +890,42 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.LAVENDER)
         p.drawText(QRectF(x, y + 56, w, 20), Qt.AlignLeft | Qt.AlignVCenter, c.get("verdict", ""))
+
+    def _paint_color(self, p, x, y, w):
+        c = self.card
+        r, g, b = (c.get("rgb") or [0, 0, 0])[:3]
+        p.setPen(QPen(T.alpha(T.SOFT, 0.35), 1))
+        p.setBrush(QColor(r, g, b))
+        p.drawRoundedRect(QRectF(x, y + 2, 56, 56), 14, 14)
+        p.setFont(T.font(24, QFont.DemiBold))
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x + 72, y, w - 72, 34), Qt.AlignLeft | Qt.AlignVCenter, c.get("hex", ""))
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + 72, y + 34, w - 72, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                   "%s · rgb(%d, %d, %d) · copied" % (c.get("name", "").capitalize(), r, g, b))
+
+    def _paint_people(self, p, x, y, w):
+        c = self.card
+        rows = ([{"name": "You", "relation": "", "state": "voice lock on" if c.get("locked") else "voice lock off",
+                  "me": True}] if c.get("me") else []) + (c.get("rows") or [])[:6]
+        for r in rows:
+            blocked = r["state"].startswith("blocked")
+            # Avatar: initial in a circle, violet for you, dim for blocked people.
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.9) if r.get("me") else T.alpha(T.SOFT, 0.12 if blocked else 0.22))
+            p.drawEllipse(QRectF(x, y + 2, 26, 26))
+            p.setFont(T.font(12, QFont.DemiBold))
+            p.setPen(T.TEXT_DIM if blocked else T.TEXT)
+            p.drawText(QRectF(x, y + 2, 26, 26), Qt.AlignCenter, r["name"][:1].upper())
+            p.setFont(T.font(14, QFont.DemiBold))
+            p.setPen(T.TEXT_DIM if blocked else T.TEXT)
+            name = r["name"] + ("  · %s" % r["relation"] if r.get("relation") else "")
+            p.drawText(QRectF(x + 38, y, w * 0.6, 30), Qt.AlignLeft | Qt.AlignVCenter, name)
+            p.setFont(F_SMALL)
+            p.setPen(T.alpha(QColor(244, 114, 182), 0.95) if blocked else T.LAVENDER)
+            p.drawText(QRectF(x + w * 0.45, y, w * 0.55, 30), Qt.AlignRight | Qt.AlignVCenter, r["state"].capitalize())
+            y += 34
 
     def _paint_voice(self, p, x, y, w):
         c = self.card

@@ -247,6 +247,8 @@ def save_date(name="", date=""):
 @action("countdown", "How long until a date, holiday or saved date (birthday, exam...).", "to: str")
 def countdown(to=""):
     t = re.sub(r"^(?:my|the)\s+", "", (to or "").lower().strip(" ?."))
+    if not t:
+        raise ActionError("Until when?")
     today = datetime.date.today()
     target, label = None, t
     saved = store.data.get("dates", {})

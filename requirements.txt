@@ -5,6 +5,8 @@ PyAudio
 webrtcvad-wheels
 SpeechRecognition
 piper-tts
+vosk
+segno
 tzdata
 miniaudio
 edge-tts

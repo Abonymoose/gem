@@ -130,7 +130,8 @@ def help_text():
             "screen time and habits, run a stopwatch, paste things you copied earlier, draft replies, make "
             "passwords, recap your day, explain what's on your screen, tidy your downloads, clip your games, "
             "mute you on Discord, test your internet speed, suggest something to watch or play, learn your voice "
-            "so I only respond to you, and answer questions. "
+            "so I only respond to you, recognise or ignore family members, remember screens you save, clip your "
+            "best game moments, give you heads-ups, work offline for the basics, and answer questions. "
             "Say shut up for a bit when you need quiet.")
 
 

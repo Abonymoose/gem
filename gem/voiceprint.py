@@ -5,6 +5,7 @@ into a 256-number voice embedding. Gem keeps embeddings of your voice (from voic
 push-to-talk, which is always you) and compares new speech against them before transcribing it.
 Everything runs on this PC; no audio leaves it for this.
 """
+import collections
 import hashlib
 import logging
 import os
@@ -28,7 +29,10 @@ MIN_SAMPLES = 4          # embeddings needed before the lock can work
 MAX_LEARNED = 40         # rolling samples from push-to-talk
 MIN_VOICED_S = 0.6       # shorter than this can't be judged
 
-store = JsonStore("voiceprint.json", {"locked": False, "trained": [], "learned": []})
+# Your voice is "trained" + "learned". "people" holds family and friends by name:
+# {"freya": {"name": "Freya", "relation": "sister", "samples": [...], "blocked": true}}
+store = JsonStore("voiceprint.json", {"locked": False, "trained": [], "learned": [], "people": {}})
+MAX_PERSON = 24
 
 
 # ── Features: Kaldi-style 80-band log-mel filterbank, as the model was trained on ──
@@ -151,9 +155,13 @@ def embed(pcm):
 
 # ── Profile ──────────────────────────────────────────────────────────────────
 
+def _vecs(lst):
+    return [np.asarray(v, dtype=np.float32) for v in lst or []]
+
+
 def _samples():
     d = store.data
-    return [np.asarray(v, dtype=np.float32) for v in (d.get("trained") or []) + (d.get("learned") or [])]
+    return _vecs((d.get("trained") or []) + (d.get("learned") or []))
 
 
 def sample_count():
@@ -173,9 +181,10 @@ def set_locked(on):
         d["locked"] = bool(on)
 
 
-def score(e):
-    """How much an embedding sounds like you: cosine to your average voice, or to your closest samples."""
-    s = _samples()
+def score(e, samples=None):
+    """How much an embedding sounds like you (or like `samples`): cosine to the average voice, or to the
+    closest few samples, whichever is higher."""
+    s = _samples() if samples is None else samples
     if not s:
         return 0.0
     m = np.stack(s)
@@ -225,3 +234,91 @@ def add(pcm, kind="learned", base_threshold=None):
 def forget():
     with store as d:
         d.update(locked=False, trained=[], learned=[])
+
+
+# ── Other people (family, friends) ───────────────────────────────────────────
+
+recent = collections.deque(maxlen=8)        # (time, embedding, who) of the last voices heard
+
+
+def people():
+    return store.data.get("people") or {}
+
+
+def person(name):
+    return people().get(_key(name))
+
+
+def _key(name):
+    return " ".join((name or "").lower().split())
+
+
+def blocked_names():
+    return {k for k, p in people().items() if p.get("blocked")}
+
+
+def identify(e, secs, base):
+    """Best match among you and everyone Gem knows: (who or None, score). who is "me" or a person key."""
+    cands = [("me", score(e) if sample_count() >= MIN_SAMPLES else 0.0)]
+    for k, p in people().items():
+        if p.get("samples"):
+            cands.append((k, score(e, _vecs(p["samples"]))))
+    who, sc = max(cands, key=lambda c: c[1])
+    return (who if sc >= threshold(secs, base) else None), sc
+
+
+def hear(pcm, base):
+    """Who is speaking: ("me" | person key | None for a stranger | "?" when too short to tell, score)."""
+    e, secs = embed(pcm)
+    if e is None:
+        last.update(score=None, secs=secs, t=time.time(), accepted=None, who="?")
+        return "?", None
+    who, sc = identify(e, secs, base)
+    recent.append((time.time(), e, who))
+    last.update(score=sc, secs=secs, t=time.time(), who=who)
+    if who not in (None, "me") and sc >= threshold(secs, base) + 0.12:
+        _add_person(who, [e])                  # confident: keep learning their voice too
+    return who, sc
+
+
+def _add_person(key, embeddings, name=None, relation=None):
+    with store as d:
+        p = d.setdefault("people", {}).setdefault(key, {"name": name or key.title(), "samples": [], "blocked": False})
+        if relation:
+            p["relation"] = relation
+        p["samples"] = (p.get("samples", []) + [[round(float(v), 5) for v in e] for e in embeddings])[-MAX_PERSON:]
+
+
+def add_person_audio(name, pcm, relation=None):
+    e, secs = embed(pcm)
+    if e is None or secs < 1.0:
+        return False
+    _add_person(_key(name), [e], name=name.strip().title(), relation=relation)
+    return True
+
+
+def label_recent(name, relation=None, within=180):
+    """"That was Freya": file the last voices that weren't you under her name. Returns how many."""
+    now = time.time()
+    picked = [e for t, e, who in reversed(recent) if now - t < within and who != "me"][:3]
+    if picked:
+        _add_person(_key(name), picked, name=name.strip().title(), relation=relation)
+        for i, (t, e, who) in enumerate(recent):
+            if any(e is p for p in picked):
+                recent[i] = (t, e, _key(name))
+    return len(picked)
+
+
+def set_blocked(name, on, relation=None):
+    key = _key(name)
+    with store as d:
+        p = d.setdefault("people", {}).setdefault(key, {"name": name.strip().title(), "samples": [], "blocked": False})
+        p["blocked"] = bool(on)
+        if relation:
+            p["relation"] = relation
+    return bool(person(name).get("samples"))
+
+
+def forget_person(name):
+    with store as d:
+        return d.setdefault("people", {}).pop(_key(name), None) is not None

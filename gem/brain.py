@@ -92,6 +92,7 @@ class Brain:
         self.session = requests.Session()
         self.history = collections.deque(maxlen=int(cfg.get("history_turns", 6)) * 2)
         self._cooldown = {}
+        self.speaker = None             # set when a known person other than the user is talking
 
     @property
     def key(self):
@@ -152,9 +153,11 @@ class Brain:
                 continue
             return content, model
         if "network" in last_error:
-            raise BrainUnavailable("I can't reach the internet right now.")
+            raise BrainUnavailable("I'm offline right now, so I can only do the basics: timers, alarms, volume, "
+                                   "music and apps.")
         if "rate limited" in last_error:
-            raise BrainUnavailable("I've hit the free AI limit for the moment. Try again in a minute.")
+            raise BrainUnavailable("I've hit the free AI limit for the moment. Basic commands still work; try "
+                                   "questions again in a minute.")
         raise BrainUnavailable("The AI service isn't responding right now.")
 
     # ── Planning ─────────────────────────────────────────────────────────────
@@ -178,8 +181,11 @@ class Brain:
         return "[always-listening]"
 
     def plan(self, text, source):
+        tag = self._tag(source)
+        if self.speaker:
+            tag += " [speaking: %s, not %s; address them by name]" % (self.speaker, self.user_name)
         messages = [{"role": "system", "content": self._system()}, *self.history,
-                    {"role": "user", "content": "%s %s" % (self._tag(source), text)}]
+                    {"role": "user", "content": "%s %s" % (tag, text)}]
         content, model = self._post(messages, json_mode=True, max_tokens=500, temperature=0.2)
         plan = _clean_plan(_parse_json(content), source)
         log.info("Plan from %s: %s", model, plan)
@@ -211,11 +217,12 @@ class Brain:
 
     # ── Plain completions for text tools ─────────────────────────────────────
 
-    def complete(self, instruction, text="", max_tokens=700, json_mode=False, temperature=0.4):
+    def complete(self, instruction, text="", max_tokens=700, json_mode=False, temperature=0.4, models=None):
         messages = [{"role": "system", "content": instruction}]
         if text:
             messages.append({"role": "user", "content": text})
-        content, _ = self._post(messages, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature)
+        content, _ = self._post(messages, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature,
+                                models=models)
         return _parse_json(content) if json_mode else content.strip()
 
     def see(self, instruction, question, image_url, max_tokens=400):

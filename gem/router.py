@@ -78,6 +78,15 @@ def _source(word):
 _THIS = r"(this|that|it|the selection|the selected text|selected text|what i selected|my clipboard|" \
         r"the clipboard|what i copied|this text|that text)"
 
+_RELATIONS = ["sister", "brother", "mom", "mum", "mother", "dad", "father", "friend", "cousin", "grandma", "grandpa",
+              "aunt", "uncle", "roommate"]
+# Words that can follow "that was" / "block" without being someone's name.
+_NOT_NAMES = {"it", "me", "him", "her", "them", "us", "you", "gem", "fun", "close", "easy", "good", "great", "nice",
+              "cool", "weird", "wild", "amazing", "sick", "crazy", "insane", "awesome", "funny", "bad", "hard", "fast",
+              "quick", "loud", "rude", "random", "everyone", "everybody", "anyone", "nothing", "all", "that", "this",
+              "fine", "right", "wrong", "true", "false", "lit", "fire", "clean", "smooth", "lucky", "unlucky", "op",
+              "broken", "scary", "sad", "annoying", "perfect", "beautiful", "epic", "brutal", "rough", "ok", "okay"}
+
 
 # ── Rules ────────────────────────────────────────────────────────────────────
 
@@ -416,6 +425,18 @@ def _rules():
         at, _ = parse_when(("in " if t.startswith("wake me up in") or t.startswith("wake me in") else "at ") + when)
         return Match("set_alarm", {"time": at.isoformat()}, False) if at else None
 
+    @rule(r"^(?:remind me (?:to |about )?(.+?) (?:when|next time|the next time|once) i (?:open|start|launch|go on|get on) "
+          r"(.+)|(?:when|next time|the next time) i (?:open|start|launch|go on|get on) (.+?),? remind me (?:to |about )?(.+))$",
+          safe=False)
+    def _(m, t):
+        msg, app = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        # Same pattern on what you actually said, to keep names' capitals ("reply to Aarav").
+        raw = re.search(m.re.pattern.replace("^", "").replace("$", ""), re.sub(r"[.!?]+$", "", _raw), re.I)
+        if raw:
+            g = raw.groups()
+            msg, app = (g[0], g[1]) if g[0] else (g[3], g[2])
+        return Match("remind_on_open", {"app": app.strip(" ,"), "message": msg.strip(" ,")}, False)
+
     @rule(r"\bremind me\b", safe=False)
     def _(m, t):
         parsed = timers.parse_reminder(t)
@@ -478,21 +499,46 @@ def _rules():
     def _(m, t):
         return Match("notes_open")
 
+    # Screen memory
+    @rule(r"^(?:remember|save|keep|bookmark) (?:this|that|this page|this screen|what's on (?:my|the) screen|"
+          r"my screen|the screen|this one|that one)(?: for later)?(?: (?:as|called|under) (.+))?$")
+    def _(m, t):
+        return Match("screen_save", {"note": m.group(1) or ""})
+
+    @rule(r"^(?:what was|show me|find|pull up|bring up|where's|where is|open) (?:that|the) (.+?) (?:i |that i )"
+          r"(?:saved|remembered|screenshotted|bookmarked)(?: earlier| yesterday| today| last week| before)?$|"
+          r"^what did i save about (.+)$|^(?:find|show me|pull up) (?:my |the )?saved screens? (?:about|of|with) (.+)$")
+    def _(m, t):
+        return Match("screen_find", {"query": next(g for g in m.groups() if g)})
+
+    @rule(r"^(?:what (?:screens )?(?:did|have) i saved?(?: today| recently| this week)?|(?:show|list)(?: me)? (?:my |the )?"
+          r"saved screens|my saved screens)$")
+    def _(m, t):
+        return Match("screen_list")
+
+    @rule(r"^(?:open|show) (?:it|that|the screenshot) (?:full ?screen|full ?size|bigger)$")
+    def _(m, t):
+        return Match("screen_open")
+
     # Memory
-    @rule(r"^what do you (?:remember|know) about me$|^what have i told you to remember$")
+    @rule(r"^what do you (?:remember|know) about me$|^what have i told you to remember$|"
+          r"^what do you know$|^tell me what you know about me$")
     def _(m, t):
         return Match("memories")
 
     @rule(r"^remember (?:that )?(.+)$", safe=False)
     def _(m, t):
-        if m.group(1).startswith("to "):      # "remember to call mom" is a task; let the AI decide
-            return None
+        if m.group(1).startswith("to ") or m.group(1) in ("this", "that", "it"):
+            return None                         # "remember to call mom" is a task; let the AI decide
         return Match("remember", {"fact": m.group(1)}, False)
 
     @rule(r"^forget (?:that |about )?(.+)$", safe=False)
     def _(m, t):
         if re.match(r"^my voice(?:print| profile)?$", m.group(1)):
             return Match("voice_forget", {}, False)
+        voice = re.match(r"^(.+?)(?:'s| s) voice$", m.group(1))
+        if voice:
+            return Match("voice_forget", {"person": voice.group(1)}, False)
         return Match("forget", {"about": m.group(1)}, False)
 
     # Focus and briefing
@@ -556,6 +602,95 @@ def _rules():
     @rule(r"^(?:forget|delete|reset|erase) my voice(?:print| profile)?$", safe=False)
     def _(m, t):
         return Match("voice_forget", {}, False)
+
+    # Family voices
+    @rule(r"^(?:learn|train|memori[sz]e|recogni[sz]e|remember) ((?:my |our )?[a-z' ]{2,30}?)(?:'s| s)? voice$")
+    def _(m, t):
+        who = m.group(1).strip()
+        return None if who in ("my", "your", "this", "that", "a", "the") else Match("voice_train", {"person": who})
+
+    @rule(r"^(?:that was|that's|that is|it was|this is) ((?:my |our )?(?:%s)(?: [a-z]+)?)(?: talking| speaking)?$"
+          % "|".join(_RELATIONS), safe=False)
+    def _(m, t):
+        return Match("voice_label", {"person": m.group(1)}, False)
+
+    @rule(r"^(?:that was|that's|that is|it was|this is) ([a-z]+)(?: talking| speaking| s voice|'s voice)?$", safe=False)
+    def _(m, t):
+        # "That was Freya": a known person, or a capitalised name in what Whisper wrote ("that was close" isn't).
+        from . import voiceprint
+        name = m.group(1)
+        proper = re.search(r"\b%s\b" % re.escape(name.capitalize()), _raw) and name not in _NOT_NAMES
+        return Match("voice_label", {"person": name}, False) if voiceprint.person(name) or proper else None
+
+    @rule(r"^(?:block|ignore|stop listening to|don't listen to|dont listen to|stop responding to|"
+          r"don't respond to|dont respond to) ((?:my |our )?[a-z' ]{2,30})$", safe=False)
+    def _(m, t):
+        who = m.group(1).strip()
+        if who in _NOT_NAMES or _known_app(who) or who.split()[-1] in ("that", "this", "it", "them", "him", "her",
+                                                                      "notifications", "ads", "calls", "messages"):
+            return None
+        return Match("voice_block", {"person": who, "on": True}, False)
+
+    @rule(r"^(?:unblock|stop ignoring|you can listen to|you can respond to|listen to|respond to) "
+          r"((?:my |our )?[a-z' ]{2,30})(?: again)?$", safe=False)
+    def _(m, t):
+        from . import voiceprint
+        from .skills.voice_id import split_name
+        who = m.group(1).strip()
+        known = voiceprint.person(split_name(who)[0])
+        if not known and not t.lower().startswith(("unblock", "stop ignoring")):
+            return None                         # "listen to music" isn't about a person
+        return Match("voice_block", {"person": who, "on": False}, False)
+
+    @rule(r"^(?:who do you know|whose voices? do you know|who(?:'s| is) blocked|who have you blocked|"
+          r"who(?:'s| is) on (?:the |my )?block ?list|(?:list|show) (?:the )?(?:people|voices|blocked people))$")
+    def _(m, t):
+        return Match("voice_people")
+
+    # Little extras
+    @rule(r"^(?:what's|what is|tell me|show me|give me|get me|copy) (?:the |my )?(?:wifi|wi-fi|wi fi) password"
+          r"(?: for (.+))?$|^(?:wifi|wi-fi) password(?: for (.+))?$")
+    def _(m, t):
+        return Match("wifi_password", {"network": m.group(1) or m.group(2) or ""})
+
+    @rule(r"^(?:make|create|show|give me|generate)(?: me)? (?:a |the )?(?:wifi|wi-fi|wi fi) (?:qr|qr code|code)"
+          r"(?: for (?:guests|my friends|friends))?$|^(?:let|help) (?:my friends?|guests?|someone) (?:join|connect to) "
+          r"(?:the |my )?(?:wifi|wi-fi)$|^(?:wifi|wi-fi) qr(?: code)?$")
+    def _(m, t):
+        return Match("wifi_qr")
+
+    @rule(r"^(?:make|create|generate|give me)(?: me)? (?:a |an )?qr(?: code)?(?: for| of| from)? ?(.*)$|^qr code(?: for)? ?(.*)$")
+    def _(m, t):
+        what = (m.group(1) or m.group(2) or "").strip()
+        if re.search(r"\b(?:wifi|wi-fi)\b", what):
+            return Match("wifi_qr")
+        raw = re.search(r"\bqr(?: code)?(?:\s+(?:for|of|from))?\s+(.+?)[.?!]*$", _raw, re.I)   # keep URLs intact
+        return Match("qr_code", {"text": raw.group(1) if raw else what})
+
+    @rule(r"^(?:shorten|make (?:a )?short(?:er)? (?:link|url)(?: for)?)(?: this| that| the| my)?(?: link| url)?(?: .+)?$")
+    def _(m, t):
+        raw = re.search(r"https?://\S+", _raw)
+        return Match("shorten_link", {"url": raw.group(0) if raw else ""})
+
+    @rule(r"^(?:copy|grab|get|extract) (?:the |all the )?text (?:from|on|off|in) (?:my |the |this )?"
+          r"(screen|image|picture|video|window|page|pdf)$|^copy (?:what's|whats) (?:written )?on (?:my |the )?screen$")
+    def _(m, t):
+        return Match("copy_screen_text", {"what": "" if not m.group(1) or m.group(1) in ("screen", "window")
+                                          else "the " + m.group(1)})
+
+    @rule(r"^(?:what colou?r is (?:this|that|under (?:my|the) (?:mouse|cursor|pointer))|colou?r picker|pick (?:this|that) "
+          r"colou?r|what(?:'s| is) (?:this|that) colou?r|copy (?:this|that) colou?r|(?:what's the )?hex (?:code )?(?:of|for) "
+          r"(?:this|that)(?: colou?r)?)$")
+    def _(m, t):
+        return Match("color_picker")
+
+    @rule(r"^(?:do a |do an )?(?:barrel roll|aileron roll)$|^do a (?:backflip|flip|spin|trick)$")
+    def _(m, t):
+        return Match("barrel_roll")
+
+    @rule(r"^hello there$")
+    def _(m, t):
+        return Match("general_kenobi")
 
     # Gaming and PC
     @rule(r"^(?:(?:un)?mute|(?:un)?deafen) (?:me|myself|my mic(?:rophone)?)(?: (?:on|in) discord)?$|"

@@ -1,4 +1,4 @@
-"""Speech to text: Groq Whisper first, Google's free recognizer as backup."""
+"""Speech to text: Groq Whisper first, Google's free recognizer as backup, offline Vosk as the last resort."""
 import io
 import logging
 import os
@@ -45,6 +45,11 @@ class Transcriber:
         self.session = requests.Session()
         self._cooldown = {}
         self._recognizer = None
+        self._offline_until = 0.0
+
+    @property
+    def offline(self):
+        return time.time() < self._offline_until
 
     @property
     def key(self):
@@ -52,16 +57,30 @@ class Transcriber:
 
     def transcribe(self, pcm):
         seconds = len(pcm) / 2 / RATE
-        for backend in self.backends:
+        online = time.time() >= self._offline_until
+        backends = (list(self.backends) if online else []) + ["offline"]
+        for backend in backends:
             try:
                 if backend == "groq" and self.key:
                     text = self._groq(pcm)
                 elif backend == "google":
                     text = self._google(pcm)
+                elif backend == "offline":
+                    from . import offline
+                    text = offline.transcribe(pcm) or None
+                    if text:
+                        log.info("Transcribed offline: %s", text)
                 else:
                     continue
+            except (requests.ConnectionError, requests.Timeout) as e:
+                # No internet: skip straight to offline recognition for a minute instead of waiting on timeouts.
+                log.warning("%s unreachable (%s); using offline recognition for now", backend, type(e).__name__)
+                self._offline_until = time.time() + 60
+                continue
             except Exception as e:
                 log.warning("%s transcription failed: %s", backend, e)
+                if "urlopen" in str(e) or "connection" in str(e).lower():
+                    self._offline_until = time.time() + 60
                 continue
             if text is None:
                 continue
