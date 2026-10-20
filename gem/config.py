@@ -89,6 +89,8 @@ DEFAULTS = {
 
     "ai": {
         "models": ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"],
+        # Used by "explain my screen"; must accept images.
+        "vision_models": ["qwen/qwen3.8-27b"],
         "reasoning_effort": "low",
         "history_turns": 4,
     },
@@ -97,6 +99,12 @@ DEFAULTS = {
         "auto_detect": True,
         # Mic users that never count as a call (substring match on the app id).
         "ignore_apps": ["python", "gem.exe", "gem2.exe"],
+    },
+
+    # "Mute me" / "deafen me": must match Toggle Mute / Toggle Deafen in Discord's Keybinds settings.
+    "discord": {
+        "mute_keys": "ctrl+shift+m",
+        "deafen_keys": "ctrl+shift+d",
     },
 
     "snooze_minutes": 10,

@@ -149,7 +149,7 @@ class Island(QWidget):
             seconds = 8.0 if kind == "pending" else max(3.5, len(self.content.text) / 12.0)
         if kind in ("timer", "focus", "weather", "system", "todo", "timers", "schedule", "briefing", "music", "web",
                     "routine", "draft", "calc", "clips", "habit", "world",
-                    "countdown", "usage"):
+                    "countdown", "usage", "speed", "picks", "tidy", "screen"):
             seconds = max(seconds, 6.5)
         if kind == "alert":
             seconds = max(seconds, 9.0)

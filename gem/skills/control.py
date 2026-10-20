@@ -128,7 +128,9 @@ def help_text():
             "summarize, rewrite or read out selected text, take dictation and screenshots, do quick maths and "
             "conversions, tell the time anywhere in the world, count down to dates, run commands later, track your "
             "screen time and habits, run a stopwatch, paste things you copied earlier, draft replies, make "
-            "passwords, recap your day, and answer questions. "
+            "passwords, recap your day, explain what's on your screen, tidy your downloads, clip your games, "
+            "mute you on Discord, test your internet speed, suggest something to watch or play, and answer "
+            "questions. "
             "Say shut up for a bit when you need quiet.")
 
 

@@ -109,6 +109,10 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Screen time | "screen time today", "screen time this week", "how long have I been on Discord today" (tracked on this PC only) |
 | Day recap | "what did I do today": a short summary of your requests, finished to-dos, habits and screen time |
 | Extras | "generate a password" (copied to the clipboard, never spoken), "pick between pizza and tacos", "what did I note about the wifi" |
+| Your screen | "what's this error", "explain my screen", "summarize this page", "look at my screen and tell me what to click" (a screenshot goes to the vision model; Gem never clicks anything). "Explain this" with nothing selected also looks at the screen |
+| Tidy downloads | "clean up my downloads" sorts loose files into PDFs, Images, Installers and so on after you say yes. Only moves, never deletes. "Undo the tidy" puts everything back |
+| Gaming | "clip that" saves the last 30 seconds with Xbox Game Bar. "Mute me" and "deafen me" toggle Discord (keys under `discord` in settings). "Speed test" checks download, upload and ping |
+| Picks | "what should I watch tonight", "what should I play", "recommend a funny movie": three picks based on your mood, what you've told Gem and the games you have installed |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |

@@ -1,3 +1,3 @@
 """Importing this package registers every action."""
-from . import (apps, calc, clipboard, control, fun, habits, insights, productivity, replies, routines, system, text,
-               timers, web, world)  # noqa: F401
+from . import (apps, calc, clipboard, control, fun, gaming, habits, insights, picks, productivity, replies, routines,
+               screen, system, text, tidy, timers, web, world)  # noqa: F401

@@ -289,6 +289,26 @@ user32.GetMonitorInfoW.argtypes = [wt.HANDLE, ctypes.POINTER(MONITORINFO)]
 user32.GetClassNameW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
 
 
+def monitor_rect_physical(hwnd):
+    """Bounds of the monitor showing hwnd, in physical pixels."""
+    old = None
+    try:
+        user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        old = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    except Exception:
+        pass
+    try:
+        info = MONITORINFO(ctypes.sizeof(MONITORINFO))
+        if not user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 2), ctypes.byref(info)):
+            return None
+        m = info.rcMonitor
+        return m.left, m.top, m.right, m.bottom
+    finally:
+        if old:
+            user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(old))
+
+
 def foreground_is_fullscreen(ignore_pid=None):
     """True when the window in front covers its whole monitor (video, games)."""
     hwnd = user32.GetForegroundWindow()

@@ -27,7 +27,18 @@ def _source_text(source):
 
 @action("text_tool", "Work on the selected text (or clipboard).", "task: summarize|explain|rewrite|fix_grammar|shorten|translate|reply|custom, instruction?: str, source?: selection|clipboard, output?: speak|replace|clipboard")
 def text_tool(task="summarize", instruction="", source="auto", output=None):
-    text = _source_text(source)
+    if task in ("summarize", "explain") and source in ("auto", "selection", None, ""):
+        # Nothing selected: "explain this" most likely means what's on screen, not an old clipboard.
+        text = (copy_selection() or "").strip()
+        if not text:
+            from .screen import explain_screen
+            return explain_screen(instruction or ("Explain what's on screen simply." if task == "explain"
+                                                  else "Summarize what's on screen."))
+        return _text_task(task, instruction, text[:MAX_CHARS], output)
+    return _text_task(task, instruction, _source_text(source), output)
+
+
+def _text_task(task, instruction, text, output):
     prompts = {
         "summarize": "Summarize this for someone listening, in two or three plain sentences.",
         "explain": "Explain this simply in two to four plain sentences for someone listening.",

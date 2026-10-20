@@ -242,7 +242,7 @@ def system_info(what="overview"):
     return system_info("overview")
 
 
-@action("ping", "Test the internet connection speed.", ai=False)
+@action("ping", "Quick check that the internet works.", ai=False)
 def ping():
     times = []
     for _ in range(3):

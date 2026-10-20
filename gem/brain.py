@@ -114,11 +114,11 @@ class Brain:
             body["reasoning_format"] = "hidden"
         return body
 
-    def _post(self, messages, json_mode=False, max_tokens=500, temperature=0.3):
+    def _post(self, messages, json_mode=False, max_tokens=500, temperature=0.3, models=None):
         if not self.key:
             raise BrainUnavailable("Set the GROQ_API_KEY environment variable so I can answer that.")
         last_error = "no model available"
-        for model in self.cfg.get("models", []):
+        for model in models or self.cfg.get("models", []):
             if self._cooldown.get(model, 0) > time.time():
                 continue
             try:
@@ -211,9 +211,18 @@ class Brain:
 
     # ── Plain completions for text tools ─────────────────────────────────────
 
-    def complete(self, instruction, text="", max_tokens=700):
+    def complete(self, instruction, text="", max_tokens=700, json_mode=False, temperature=0.4):
         messages = [{"role": "system", "content": instruction}]
         if text:
             messages.append({"role": "user", "content": text})
-        content, _ = self._post(messages, max_tokens=max_tokens, temperature=0.4)
+        content, _ = self._post(messages, json_mode=json_mode, max_tokens=max_tokens, temperature=temperature)
+        return _parse_json(content) if json_mode else content.strip()
+
+    def see(self, instruction, question, image_url, max_tokens=400):
+        """Answer a question about an image (a data: URL) with a vision model."""
+        messages = [{"role": "system", "content": instruction},
+                    {"role": "user", "content": [{"type": "text", "text": question},
+                                                 {"type": "image_url", "image_url": {"url": image_url}}]}]
+        content, _ = self._post(messages, max_tokens=max_tokens, temperature=0.2,
+                                models=self.cfg.get("vision_models") or ["qwen/qwen3.8-27b"])
         return content.strip()

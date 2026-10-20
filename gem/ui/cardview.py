@@ -27,6 +27,7 @@ F_BIG = T.font(40, QFont.Light)
 F_HUGE = T.font(36, QFont.Normal)
 F_TIME = T.font(28, QFont.DemiBold)
 F_RING = T.font(15, QFont.DemiBold)
+_PICK_TITLE_H = 22
 
 
 def _wrap_height(font, text, width, max_lines=None):
@@ -200,7 +201,8 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "clock": "", "briefing": "", "alert": "", "image": "SCREENSHOT", "confirm": "CONFIRM", "text": "",
           "pending": "", "web": "FROM THE WEB", "routine": "ROUTINE", "draft": "DRAFT", "calc": "",
           "clips": "CLIPBOARD", "reading": "READING ALOUD", "habit": "",
-          "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME"}
+          "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME",
+          "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED"}
 
 
 class CardContent:
@@ -253,6 +255,8 @@ class CardContent:
             label = c["title"].upper()
         if self.kind == "routine" and c.get("name"):
             label += " · " + c["name"].upper()
+        if self.kind == "picks" and c.get("title"):
+            label = c["title"].upper()
         return label
 
     def height(self, w):
@@ -308,8 +312,13 @@ class CardContent:
             return 40 * max(1, min(6, len(c.get("rows") or [])))
         if k == "countdown":
             return 70
-        if k == "usage":
+        if k in ("usage", "tidy"):
             return 54 + 30 * min(6, len(c.get("rows") or []))
+        if k == "speed":
+            return 80
+        if k == "picks":
+            return sum(_PICK_TITLE_H + 2 + _wrap_height(F_SMALL, r.get("why", ""), w - 38) + 14
+                       for r in (c.get("rows") or [])[:3]) - 4
         if k == "clips":
             return 28 * max(1, min(8, len(c.get("items") or [])))
         if k == "reading":
@@ -794,11 +803,11 @@ class CardContent:
         p.setPen(T.TEXT_DIM)
         p.drawText(QRectF(x + w * 0.42, y + 30, w * 0.58, 20), Qt.AlignRight | Qt.AlignVCenter, c.get("date", ""))
 
-    def _paint_usage(self, p, x, y, w):
+    def _paint_usage(self, p, x, y, w, total_key="total"):
         c = self.card
         p.setFont(T.font(30, QFont.Light))
         p.setPen(T.TEXT)
-        p.drawText(QRectF(x, y - 4, w, 42), Qt.AlignLeft | Qt.AlignVCenter, c.get("total", ""))
+        p.drawText(QRectF(x, y - 4, w, 42), Qt.AlignLeft | Qt.AlignVCenter, str(c.get(total_key, "")))
         rows = (c.get("rows") or [])[:6]
         top = max([r["secs"] for r in rows] + [1])
         for i, r in enumerate(rows):
@@ -814,8 +823,76 @@ class CardContent:
             p.setPen(Qt.NoPen)
             p.setBrush(g)
             p.drawRoundedRect(bar, 4, 4)
-            m = int(r["secs"] // 60)
             p.setFont(F_SMALL)
             p.setPen(T.TEXT_DIM)
-            p.drawText(QRectF(x + w - 74, yy, 74, 24), Qt.AlignRight | Qt.AlignVCenter,
-                       ("%dh %dm" % (m // 60, m % 60)) if m >= 60 else ("%dm" % m if m else "<1m"))
+            if self.kind == "tidy":
+                value = "%d" % r["secs"]
+            else:
+                m = int(r["secs"] // 60)
+                value = ("%dh %dm" % (m // 60, m % 60)) if m >= 60 else ("%dm" % m if m else "<1m")
+            p.drawText(QRectF(x + w - 74, yy, 74, 24), Qt.AlignRight | Qt.AlignVCenter, value)
+
+    def _paint_tidy(self, p, x, y, w):
+        n = self.card.get("total", 0)
+        self.card.setdefault("total_text", "%d file%s moved" % (n, "" if n == 1 else "s"))
+        self._paint_usage(p, x, y, w, total_key="total_text")
+
+    def _paint_speed(self, p, x, y, w):
+        c = self.card
+
+        def mbps(v):
+            return "%.0f" % v if v >= 10 else "%.1f" % v
+
+        p.setFont(T.font(40, QFont.Light))
+        p.setPen(T.TEXT)
+        num = mbps(c.get("down", 0))
+        nw = QFontMetrics(p.font()).horizontalAdvance(num)
+        p.drawText(QRectF(x, y - 6, nw + 4, 54), Qt.AlignLeft | Qt.AlignVCenter, num)
+        p.setFont(F_SMALL)
+        p.setPen(T.TEXT_DIM)
+        p.drawText(QRectF(x + nw + 8, y + 20, 110, 20), Qt.AlignLeft | Qt.AlignVCenter, "Mbps down")
+        sx = x + w * 0.56
+        for i, (name, value) in enumerate([("Upload", "%s Mbps" % mbps(c.get("up", 0))),
+                                           ("Ping", "%d ms" % c.get("ping", 0))]):
+            yy = y + 2 + i * 24
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(sx, yy, w * 0.2, 20), Qt.AlignLeft | Qt.AlignVCenter, name)
+            p.setFont(T.font(14, QFont.DemiBold))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(sx, yy, x + w - sx, 20), Qt.AlignRight | Qt.AlignVCenter, value)
+        p.setFont(F_SMALL)
+        p.setPen(T.LAVENDER)
+        p.drawText(QRectF(x, y + 56, w, 20), Qt.AlignLeft | Qt.AlignVCenter, c.get("verdict", ""))
+
+    def _paint_picks(self, p, x, y, w):
+        for i, r in enumerate((self.card.get("rows") or [])[:3]):
+            # Numbered dot
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.85))
+            p.drawEllipse(QRectF(x, y + 1, 22, 22))
+            p.setFont(T.font(11, QFont.DemiBold))
+            p.setPen(QColor(255, 255, 255))
+            p.drawText(QRectF(x, y + 1, 22, 22), Qt.AlignCenter, str(i + 1))
+            tx, tw = x + 38, w - 38
+            chip = "Installed" if r.get("installed") else (r.get("kind") or "").capitalize()
+            p.setFont(T.font(11, QFont.DemiBold))
+            cw = QFontMetrics(p.font()).horizontalAdvance(chip) + 16 if chip else 0
+            p.setFont(T.font(15, QFont.DemiBold))
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(tx, y, tw - cw - 8, _PICK_TITLE_H), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(p.font()).elidedText(r.get("title", ""), Qt.ElideRight, int(tw - cw - 8)))
+            if chip:
+                cr = QRectF(x + w - cw, y + 1, cw, 20)
+                p.setPen(Qt.NoPen)
+                p.setBrush(T.alpha(T.VIOLET, 0.35) if r.get("installed") else T.alpha(T.SOFT, 0.14))
+                p.drawRoundedRect(cr, 10, 10)
+                p.setFont(T.font(11, QFont.DemiBold))
+                p.setPen(T.TEXT if r.get("installed") else T.TEXT_DIM)
+                p.drawText(cr, Qt.AlignCenter, chip)
+            why = r.get("why", "")
+            wh = _wrap_height(F_SMALL, why, tw)
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(tx, y + _PICK_TITLE_H + 2, tw, wh + 2), Qt.TextWordWrap, why)
+            y += _PICK_TITLE_H + 2 + wh + 14
