@@ -92,6 +92,7 @@ class Brain:
         self.session = requests.Session()
         self.history = collections.deque(maxlen=int(cfg.get("history_turns", 6)) * 2)
         self._cooldown = {}
+        self._limits = {}               # model -> (tokens left this minute, minute allowance, refill time)
         self.speaker = None             # set when a known person other than the user is talking
 
     @property
@@ -115,6 +116,26 @@ class Brain:
             body["reasoning_format"] = "hidden"
         return body
 
+    def _note_limits(self, model, headers):
+        """Remember how many tokens a model has left this minute (Groq sends it with every reply)."""
+        try:
+            left = int(headers.get("x-ratelimit-remaining-tokens"))
+            limit = int(headers.get("x-ratelimit-limit-tokens"))
+        except (TypeError, ValueError):
+            return
+        m = re.match(r"(?:(\d+)m)?([\d.]+)s", headers.get("x-ratelimit-reset-tokens") or "")
+        reset = (int(m.group(1) or 0) * 60 + float(m.group(2))) if m else 60.0
+        self._limits[model] = (left, limit, time.time() + reset)
+
+    def budget(self, model):
+        """Tokens a model can probably still take this minute (its full allowance if we haven't heard)."""
+        left, limit, refill_at = self._limits.get(model, (None, None, 0))
+        if left is None:
+            return 10 ** 6
+        if self._cooldown.get(model, 0) > time.time():
+            return 0
+        return limit if time.time() >= refill_at else left
+
     def _post(self, messages, json_mode=False, max_tokens=500, temperature=0.3, models=None):
         if not self.key:
             raise BrainUnavailable("Set the GROQ_API_KEY environment variable so I can answer that.")
@@ -132,6 +153,7 @@ class Brain:
                 if isinstance(e, (requests.ConnectionError,)):
                     break
                 continue
+            self._note_limits(model, r.headers)
             if r.status_code == 429:
                 wait = float(r.headers.get("retry-after") or 20)
                 self._cooldown[model] = time.time() + wait

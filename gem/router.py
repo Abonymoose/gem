@@ -262,7 +262,8 @@ def _rules():
         return Match("world_clock", {"remove": m.group(1)})
 
     # Countdowns and saved dates
-    @rule(r"^(?:how many (?:days|weeks|sleeps) |how long )(?:until|till|til|to|before|left until) (.+)$|"
+    @rule(r"^(?:how many (?:days|weeks|sleeps) (?:is it |are there |are left |left |do i have |until |till )?|"
+          r"how long (?:is it |is left |do i have )?)(?:until|till|til|to|before|left until) (.+)$|"
           r"^(?:days|time) (?:until|till|left until|left till) (.+)$|^countdown to (.+)$|"
           r"^when(?:'s| is) (?:it )?(.+?)(?: this year| next year)?$")
     def _(m, t):
