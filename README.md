@@ -128,6 +128,8 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Voice notes | "record a voice note" (hands-free, stops when you do, transcribed), "play my last voice note", "read my voice notes", "what did I say in my voice note about the trip" |
 | Images | "make me a wallpaper of a misty forest", "draw a cat in a space suit", then "set it as my wallpaper". Free and quick (Pollinations), so not 4K; one image every ~45 seconds |
 | Sound output | "switch to my headphones", "switch the audio to speakers", "what's my audio output" |
+| Windows by name | "minimize Discord", "hide Spotify", "restore Discord" / "bring back Spotify", "minimize everything except Chrome" |
+| Brightness | "brightness 40", "make the screen brighter", "dim the screen a bit", "what's the brightness". External monitors over DDC/CI (on in the monitor's menu), laptop screens through Windows |
 | Recording | "start recording" / "stop recording" (Xbox Game Bar, saved to Videos › Captures) |
 | Air | "how's the air quality", "what's the AQI in Delhi", "UV index"; heads-up when it's unhealthy |
 | More heads-ups | "Aarav's birthday is March 5" → reminded the evening before and on the day; "while you were away" summary when you come back to the PC; softer voice at night (11 PM to 7 AM) |

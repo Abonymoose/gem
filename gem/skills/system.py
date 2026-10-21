@@ -310,13 +310,33 @@ def dark_mode(on=True):
     return "Dark mode on." if on else "Light mode on."
 
 
-@action("brightness", "Screen brightness (laptops).", "level: number")
-def brightness(level=50):
-    level = max(0, min(100, int(level)))
-    r = subprocess.run(["powershell", "-NoProfile", "-Command",
-                        "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
-                        ".WmiSetBrightness(1,%d)" % level],
-                       capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-    if r.returncode != 0 or "Exception" in (r.stderr or ""):
-        return "I can't change the brightness on this screen."
-    return "Brightness %d." % level
+@action("brightness", "Screen brightness: set a level 0-100, or change it (e.g. +15 brighter, -20 dimmer). Works on "
+        "external monitors (DDC/CI) and laptop screens. No arguments says the current brightness.",
+        "level?: number, change?: number")
+def brightness(level=None, change=None):
+    from .. import monitors
+    if level is None and change is None:
+        now = monitors.brightness()
+        if not now:
+            return "I can't read the brightness on this screen."
+        return card("volume", "Brightness is at %d." % now[0][1], level=now[0][1], icon="sun", header="Brightness")
+    if level is not None:
+        level = max(0, min(100, int(float(level))))
+    done = []
+    try:
+        done = monitors.set_brightness(level=level, change=float(change) if change is not None else None)
+    except Exception as e:
+        log.warning("Monitor brightness failed: %s", e)
+    if not done and level is not None:
+        # A laptop's own screen doesn't speak DDC/CI; Windows controls it instead.
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
+                            ".WmiSetBrightness(1,%d)" % level],
+                           capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+        if r.returncode == 0 and "Exception" not in (r.stderr or ""):
+            done = [("Screen", level)]
+    if not done:
+        return ("I can't change the brightness on this screen. On a monitor, turn on DDC/CI in its own menu, "
+                "then try again.")
+    new = done[0][1]
+    return card("volume", "Brightness %d." % new, level=new, icon="sun", header="Brightness")

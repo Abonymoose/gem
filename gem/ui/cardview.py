@@ -585,7 +585,18 @@ class CardContent:
         c = self.card
         muted = c.get("muted")
         level = 0 if muted else c.get("level", 0)
-        draw_speaker(p, x + 14, y + 18, 26, T.TEXT, muted)
+        if c.get("icon") == "sun":
+            cx, cy = x + 14, y + 18
+            p.setPen(QPen(T.TEXT, 1.8, Qt.SolidLine, Qt.RoundCap))
+            for i in range(8):
+                ang = math.radians(45 * i)
+                p.drawLine(QPointF(cx + math.cos(ang) * 8.5, cy + math.sin(ang) * 8.5),
+                           QPointF(cx + math.cos(ang) * 12, cy + math.sin(ang) * 12))
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.TEXT)
+            p.drawEllipse(QPointF(cx, cy), 5.5, 5.5)
+        else:
+            draw_speaker(p, x + 14, y + 18, 26, T.TEXT, muted)
         bar = QRectF(x + 40, y + 13, w - 100, 10)
         p.setPen(Qt.NoPen)
         p.setBrush(T.alpha(T.SOFT, 0.14))

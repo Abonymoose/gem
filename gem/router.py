@@ -1150,10 +1150,47 @@ def _rules():
     def _(m, t):
         return Match("dark_mode", {"on": False})
 
-    @rule(r"^(?:set )?(?:the )?brightness (?:to |at )?(.+)$")
+    @rule(r"^(?:set )?(?:the )?(?:screen |monitor )?brightness (?:to |at )?(.+)$")
     def _(m, t):
-        pct = parse_percent(m.group(1))
+        what = m.group(1)
+        if re.match(r"^(?:up|higher|more)$", what):
+            return Match("brightness", {"change": 15})
+        if re.match(r"^(?:down|lower|less)$", what):
+            return Match("brightness", {"change": -15})
+        pct = parse_percent(what)
         return Match("brightness", {"level": pct}) if pct is not None else None
+
+    @rule(r"^(?:make (?:the |my )?(?:screen|monitor|display) |turn (?:the )?(?:screen|monitor) )?(brighter|dimmer|darker)"
+          r"(?: (?:a bit|a little|a lot|please))?$|^(dim|brighten) (?:the |my )?(?:screen|monitor|display)"
+          r"(?: (?:a bit|a little|a lot))?$|^turn (?:the )?brightness (up|down)$")
+    def _(m, t):
+        word = next(g for g in m.groups() if g)
+        step = 30 if "a lot" in t else 10 if ("a bit" in t or "a little" in t) else 15
+        return Match("brightness", {"change": step if word in ("brighter", "brighten", "up") else -step})
+
+    @rule(r"^(?:what(?:'s| is) (?:the |my )?(?:screen |monitor )?brightness|how bright is (?:the |my )?"
+          r"(?:screen|monitor))$")
+    def _(m, t):
+        return Match("brightness")
+
+    # Windows by app name
+    @rule(r"^(?:minimi[sz]e|hide) (?!everything|all\b|this|it$|the window|window)(?:my |the )?(.+?)(?: window| app)?$")
+    def _(m, t):
+        name = m.group(1)
+        return Match("minimize_app", {"name": name}) if apps.running(name) or _known_app(name) else None
+
+    @rule(r"^(?:restore|unminimi[sz]e|bring back|bring up|show|maximi[sz]e) (?:my |the )?(.+?)(?: window| app)?"
+          r"(?: again| back)?$")
+    def _(m, t):
+        name = m.group(1)
+        if name in ("this", "it", "the window", "window", "desktop", "me"):
+            return None
+        return Match("restore_app", {"name": name}) if apps.running(name) else None
+
+    @rule(r"^(?:minimi[sz]e|hide) (?:everything|all(?: windows)?|all the windows) (?:except|but|apart from) "
+          r"(?:my |the )?(.+)$|^(?:focus on|just show|only show) (?:my |the )?(.+?) only$")
+    def _(m, t):
+        return Match("minimize_others", {"name": m.group(1) or m.group(2)})
 
     # Text tools and dictation
     @rule(r"^(?:start |begin |turn on )?(?:dictation|dictating|dictate)(?: mode)?$|"

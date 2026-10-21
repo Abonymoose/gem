@@ -18,8 +18,8 @@ import psutil
 
 from ..actions import ActionError, action
 from ..runtime import svc
-from ..winapi import close_window, focus_window, foreground_window, known_folder, top_windows, \
-    window_process_name, window_title
+from ..winapi import SW_MINIMIZE, SW_RESTORE, close_window, focus_window, foreground_window, is_minimized, \
+    known_folder, show_window, top_windows, window_class, window_pid, window_process_name, window_title
 
 log = logging.getLogger("gem.apps")
 
@@ -250,6 +250,56 @@ def switch_to(name=""):
             return open_app(name)
         return "%s isn't open." % name.capitalize()
     focus_window(hit[0])
+    return None
+
+
+# Windows that are part of Windows itself, never minimized or counted as an app.
+_SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow"}
+
+
+def _app_windows(name):
+    """Top-level windows of an app, by app or process name, or by a word in the title."""
+    name = name.lower().strip()
+    wanted = set(_process_names(name))
+    me = os.getpid()
+    windows = [w for w in top_windows() if window_class(w[0]) not in _SHELL_CLASSES and window_pid(w[0]) != me]
+    return [w for w in windows if w[2] in wanted] or [w for w in windows if name in w[1].lower()]
+
+
+@action("minimize_app", "Minimize an app by name (all its windows), even if it isn't the one in front.", "name: str")
+def minimize_app(name=""):
+    hits = _app_windows(name)
+    if not hits:
+        return "%s isn't open." % name.capitalize()
+    for hwnd, _, _ in hits:
+        show_window(hwnd, SW_MINIMIZE)
+    return None
+
+
+@action("restore_app", "Bring back a minimized app (restore its windows) and put it in front.", "name: str")
+def restore_app(name=""):
+    hits = _app_windows(name)
+    if not hits:
+        if resolve_app(name)[1]:
+            return open_app(name)
+        return "%s isn't open." % name.capitalize()
+    for hwnd, _, _ in hits:
+        if is_minimized(hwnd):
+            show_window(hwnd, SW_RESTORE)
+    focus_window(hits[0][0])
+    return None
+
+
+@action("minimize_others", "Minimize every window except one app, to focus on it.", "name: str")
+def minimize_others(name=""):
+    keep = {w[0] for w in _app_windows(name)}
+    if not keep:
+        return "%s isn't open." % name.capitalize()
+    me = os.getpid()
+    for hwnd, _, _ in top_windows():
+        if hwnd not in keep and window_class(hwnd) not in _SHELL_CLASSES and window_pid(hwnd) != me:
+            show_window(hwnd, SW_MINIMIZE)
+    focus_window(next(iter(keep)))
     return None
 
 

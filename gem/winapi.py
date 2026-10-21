@@ -257,6 +257,16 @@ def show_window(hwnd, cmd):
     user32.ShowWindow(hwnd, cmd)
 
 
+def is_minimized(hwnd):
+    return bool(user32.IsIconic(hwnd))
+
+
+def window_class(hwnd):
+    buf = ctypes.create_unicode_buffer(128)
+    user32.GetClassNameW(hwnd, buf, 128)
+    return buf.value
+
+
 def close_window(hwnd):
     user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
 
