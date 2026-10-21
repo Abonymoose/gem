@@ -13,6 +13,17 @@ class Match:
 
 
 _NAME = r"(?:gem|jem)"
+_UNIT_AFTER = r"(?!\s*(?:%|percent|hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|times|x\b|plus|minus|divided)\b)"
+# "at 7.30", "until 6.45", "7.30 pm", "9.15 tomorrow": a clock time written with a dot. Other dots are decimals.
+_DOT_TIME = re.compile(r"\b(at|by|for|until|till|from|to|around|about|before|after) (\d{1,2})\.([0-5]\d)\b%s|"
+                       r"\b(\d{1,2})\.([0-5]\d)(?=\s*(?:am|pm|tomorrow|tonight|today)\b)" % _UNIT_AFTER)
+
+
+def _dot_time(m):
+    word, hour, minute = (m.group(1), m.group(2), m.group(3)) if m.group(2) else ("", m.group(4), m.group(5))
+    if int(hour) > 23:
+        return m.group(0)
+    return "%s%s:%s" % (word + " " if word else "", hour, minute)
 
 
 def normalize(text):
@@ -20,10 +31,11 @@ def normalize(text):
     raw = text.strip()
     by_name = bool(re.search(r"\b%s\b" % _NAME, raw, re.I))
     t = raw.lower()
-    t = re.sub(r"(?<=\d)[.:](?=\d)", ":", t)
     t = re.sub(r"\b([ap])\.m\.", r"\1m", t)
+    t = _DOT_TIME.sub(_dot_time, t)
+    t = re.sub(r"(?<=\d)\.(?=\d)", "\x00", t)        # keep decimals through the punctuation strip
     trailing_name = bool(re.search(r",\s*%s[.!?]*$" % _NAME, t))
-    t = re.sub(r"[^\w\s':%+-]", " ", t)
+    t = re.sub(r"[^\w\s':%+\x00-]", " ", t).replace("\x00", ".")
     t = re.sub(r"^(?:(?:hey|hi|ok|okay|yo|oi)\s+)?%s\b(?!'s|s\b)\s*" % _NAME, "", t.strip())   # keep "gem's ..."
     if trailing_name:
         t = re.sub(r"\s*\b%s\s*$" % _NAME, "", t)

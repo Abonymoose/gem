@@ -9,29 +9,33 @@ _UNITS = {
 }
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
          "seventy": 70, "eighty": 80, "ninety": 90}
-_WORD = r"(?:%s)" % "|".join(list(_UNITS) + list(_TENS) + ["hundred"])
+_SCALES = {"thousand": 1000, "million": 1000000, "billion": 1000000000}
+_WORD = r"(?:%s)" % "|".join(list(_UNITS) + list(_TENS) + ["hundred"] + list(_SCALES))
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
 def _words_values(words):
-    """['twenty', 'five'] -> [25]; ['two', 'thirty'] -> [2, 30] (like a time)."""
-    out, cur, have = [], 0, False
+    """['twenty', 'five'] -> [25]; ['two', 'thirty'] -> [2, 30] (like a time); ['two', 'thousand'] -> [2000]."""
+    out, total, cur, have = [], 0, 0, False
     for w in words:
         if w in _TENS:
             if have and cur % 100 != 0:      # "two thirty": a new number starts
-                out.append(cur)
-                cur = 0
+                out.append(total + cur)
+                total = cur = 0
             cur += _TENS[w]
         elif w in _UNITS:
             if have and cur % 10 != 0:       # "five five"
-                out.append(cur)
-                cur = 0
+                out.append(total + cur)
+                total = cur = 0
             cur += _UNITS[w]
         elif w == "hundred":
             cur = max(cur, 1) * 100
+        elif w in _SCALES:
+            total += max(cur, 1) * _SCALES[w]
+            cur = 0
         have = True
-    out.append(cur)
+    out.append(total + cur)
     return out
 
 
@@ -45,6 +49,11 @@ def words_to_numbers(text):
     t = re.sub(r"\ba few (minute|hour|second)s?\b", r"3 \1s", t)
     t = re.sub(r"\b(?:a|an) (minute|hour|second|day)\b", r"1 \1", t)
     t = re.sub(r"(\d+) and a half (hour|minute)s?", lambda m: "%g %ss" % (int(m.group(1)) + 0.5, m.group(2)), t)
+    t = re.sub(r"\ba (hundred|thousand|million|billion)\b", r"one \1", t)
+    # "one hundred and five" is one number; elsewhere "and" stays a word ("three and four" is a sum).
+    t = re.sub(r"\b(hundred|thousand|million|billion) and (?=%s\b)" % _WORD, r"\1 ", t)
+    t = re.sub(r"(\d+(?:\.\d+)?) (thousand|million|billion)\b",
+               lambda m: ("%.3f" % (float(m.group(1)) * _SCALES[m.group(2)])).rstrip("0").rstrip("."), t)
 
     def repl(m):
         return " %s " % " ".join(str(v) for v in _words_values(re.split(r"[\s-]+", m.group(0))))
@@ -53,12 +62,35 @@ def words_to_numbers(text):
     return re.sub(r"\s+", " ", t).strip()
 
 
+def _part_of_day(clock, part):
+    """('3', 'afternoon') -> '3 pm'; ('12', 'night') -> '12 am'."""
+    hour = int(clock.split(":")[0])
+    if hour > 12:
+        return clock                        # already a 24-hour time
+    if part == "morning" or (part == "night" and (hour == 12 or hour < 5)):     # "2 at night" is the small hours
+        return clock + " am"
+    return clock + " pm"
+
+
 def normalize_time_words(text):
     t = text.lower()
     t = re.sub(r"\b([ap])\.\s?m\.?", r"\1m", t)
     t = re.sub(r"(\d)\s?([ap])m\b", r"\1 \2m", t)
     t = t.replace("o'clock", "").replace("oclock", "")
-    return words_to_numbers(t)
+    t = words_to_numbers(t)
+    # Clock phrases: "half past 7", "quarter to 8", "10 past 6", "at 20 to 9".
+    t = re.sub(r"\bhalf (?:past|after) (\d{1,2})\b", r"\1:30", t)
+    t = re.sub(r"\b(?:a )?quarter (?:past|after) (\d{1,2})\b", r"\1:15", t)
+    t = re.sub(r"\b(?:a )?quarter (?:to|till|til|of) (\d{1,2})\b",
+               lambda m: "%d:45" % ((int(m.group(1)) - 2) % 12 + 1), t)
+    t = re.sub(r"\b(\d{1,2}) (?:minutes? )?past (\d{1,2})\b(?! (?:minutes?|hours?))",
+               lambda m: "%s:%02d" % (m.group(2), int(m.group(1))) if int(m.group(1)) < 60 else m.group(0), t)
+    t = re.sub(r"\b(at|by|around|about) (\d{1,2}) (?:minutes? )?(?:to|till|til) (\d{1,2})\b(?! (?:minutes?|hours?))",
+               lambda m: "%s %d:%02d" % (m.group(1), (int(m.group(3)) - 2) % 12 + 1, 60 - int(m.group(2)))
+               if 0 < int(m.group(2)) < 60 else m.group(0), t)
+    t = re.sub(r"\b(\d{1,2}(?::\d{2})?) (?:in the (morning|afternoon|evening)|at (night))\b",
+               lambda m: _part_of_day(m.group(1), m.group(2) or m.group(3)), t)
+    return t
 
 
 _DUR_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(hours?|hrs?|h\b|minutes?|mins?|m\b|seconds?|secs?|s\b)")
@@ -129,7 +161,7 @@ def parse_when(text, now=None):
         if secs:
             return now + datetime.timedelta(seconds=secs), m.group(0)
 
-    day_offset, day_text = None, ""
+    day_offset, day_text, weekday_today = None, "", False
     dm = re.search(r"\b(today|tonight|tomorrow|day after tomorrow)\b", t)
     if dm:
         day_offset = {"today": 0, "tonight": 0, "tomorrow": 1, "day after tomorrow": 2}[dm.group(1)]
@@ -138,7 +170,10 @@ def parse_when(text, now=None):
         wm = re.search(r"\b(?:on |next |this )?(%s)\b" % "|".join(WEEKDAYS), t)
         if wm:
             target = WEEKDAYS.index(wm.group(1))
-            day_offset = (target - now.weekday()) % 7 or 7
+            day_offset = (target - now.weekday()) % 7
+            # Today's weekday: later today, unless that time has passed or they said "next".
+            weekday_today = day_offset == 0 and not wm.group(0).startswith("next ")
+            day_offset = day_offset or 7
             day_text = wm.group(0)
 
     hour = minute = None
@@ -168,6 +203,8 @@ def parse_when(text, now=None):
     if dm and dm.group(1) == "tonight" and hour < 12:
         hour += 12
 
+    if weekday_today and now.replace(hour=hour, minute=minute, second=0, microsecond=0) > now:
+        day_offset = 0
     base = now + datetime.timedelta(days=day_offset or 0)
     dt = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if ampm is None and hour <= 12 and day_offset is None:

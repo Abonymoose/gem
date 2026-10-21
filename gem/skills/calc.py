@@ -52,8 +52,11 @@ def fmt(x):
 def to_expression(text):
     """Spoken maths -> a Python expression string, or None."""
     t = words_to_numbers(text.lower())
-    t = re.sub(r"^(?:what(?:'s| is)|how much is|calculate|compute|work out|whats)\s+", "", t).strip(" ?.")
+    t = re.sub(r"^(?:what(?:'s| is)|how much is|calculate|compute|work out|whats)\s+(?:the\s+)?", "", t).strip(" ?.")
     t = t.replace(",", "")
+    t = re.sub(r"\bnegative\s+(?=\d)", "-", t)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s+off\s+(\d+(?:\.\d+)?)", r"(\2*(1-\1/100))", t)
+    t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s+(?:tip|tax)\s+(?:on|for)\s+", r"(\1/100)*", t)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+", r"(\1/100)*", t)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)", r"(\1/100)", t)
     t = re.sub(r"\bsquare root of\s+(\d+(?:\.\d+)?)", r"sqrt(\1)", t)
@@ -76,7 +79,8 @@ def calculate(text):
         value = _eval(ast.parse(expr, mode="eval"))
     except Exception:
         return None
-    shown = re.sub(r"\(([\d.]+)/100\)\*", r"\1% of ", expr).replace("**", "^").replace("*", "×").replace("/", "÷").replace("sqrt", "√")
+    shown = re.sub(r"\(([\d.]+)\*\(1-([\d.]+)/100\)\)", r"\2% off \1", expr)
+    shown = re.sub(r"\(([\d.]+)/100\)\*", r"\1% of ", shown).replace("**", "^").replace("*", "×").replace("/", "÷").replace("sqrt", "√")
     return card("calc", "That's %s." % fmt(value), expression=shown, result=fmt(value))
 
 
