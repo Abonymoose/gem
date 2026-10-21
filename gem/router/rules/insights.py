@@ -39,11 +39,21 @@ def register(rule):
         return Match("timeline_app", {"app": m.group(1) or m.group(3), "which": "last",
                                       "day": "yesterday" if (m.group(2) or m.group(4)) == " yesterday" else "today"})
 
-    @rule(r"^how long have i been (?:playing|watching|using|in|on|working on|doing) (.+?)(?: for)?$")
+    @rule(r"^how long have i been (?:on|using|at|sitting at) (?:the |my |this )?(?:pc|computer|laptop|desk|screen)"
+          r"(?: for)?(?: without a break)?$|^how long have i been sitting here$|^when did i (?:last )?take a break$|"
+          r"^when was my last break$")
+    def _(m, t):
+        return Match("pc_session")
+
+    @rule(r"^how long have i been (?:playing|watching|using|in|on|working on|doing) (.+?)(?: for)?$|"
+          r"^how long have i been (?:playing|gaming|watching|working)(?: for)?$")
     def _(m, t):
         if re.search(r"\b(?:today|this week)\b", t):
             return None                     # a total: screen time below
-        return Match("timeline_app", {"app": m.group(1), "which": "current"})
+        app = m.group(1) or ""
+        if re.fullmatch(r"(?:it|this|that|the game|this game|the video|this video)", app):
+            app = ""
+        return Match("timeline_app", {"app": app, "which": "current"})
 
     # Screen time and recap
     @rule(r"^(?:what(?:'s| is) |show (?:me )?|check )?(?:my )?screen ?time(?: today| for today)?$")

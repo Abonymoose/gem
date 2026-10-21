@@ -2,6 +2,7 @@
 import re
 
 from ...parse import parse_duration
+from ...skills import ambient
 from ..core import Match, said
 
 
@@ -42,14 +43,26 @@ def register(rule):
         secs = parse_duration(m.group(2) or "")
         return Match("ambient_play", {"sound": what, "minutes": secs / 60.0 if secs else None})
 
-    @rule(r"^(?:stop|turn off|end|kill) (?:the )?(?:rain|ocean|ambient|background|white noise|brown noise|pink noise|"
-          r"fan|wave|waves)?(?: sounds?| noise)$")
+    @rule(r"^(?:stop|turn off|end|kill) (?:the )?(?:(?:rain|ocean|ambient|background|fan|wave|waves) )?(?:sounds?|noise)$|"
+          r"^(?:stop|turn off|end|kill) (?:the )?(?:white|brown|pink) noise(?: sounds?)?$")
     def _(m, t):
         return Match("ambient_stop")
 
-    @rule(r"^(?:make )?(?:the )?(?:rain|ambient|background|noise|sounds?|white noise|brown noise) (louder|quieter|softer)$")
+    @rule(r"^(?:stop|turn off|end|kill) (?:the )?(?:rain|ocean|ocean waves|waves|sea|fan|storm|thunderstorm)$")
+    def _(m, t):
+        return Match("ambient_stop") if ambient.player["stop"] else None
+
+    @rule(r"^(?:make )?(?:the )?(?:rain|ocean|waves|fan|storm|ambient|background|noise|sounds?|white noise|brown noise|"
+          r"pink noise) (?:a (?:bit|little) )?(louder|quieter|softer)$")
     def _(m, t):
         return Match("ambient_volume", {"direction": "up" if m.group(1) == "louder" else "down"})
+
+    @rule(r"^make it (?:a (?:bit|little) )?(louder|quieter|softer)$")
+    def _(m, t):
+        up = m.group(1) == "louder"
+        if ambient.player["stop"]:
+            return Match("ambient_volume", {"direction": "up" if up else "down"})
+        return Match("volume", {"change": 10 if up else -10})
 
     # Voice notes
     @rule(r"^(?:record|take|make|start|leave) (?:a |me a )?voice (?:note|memo|message)$")

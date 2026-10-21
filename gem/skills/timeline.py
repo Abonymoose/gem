@@ -21,6 +21,7 @@ log = logging.getLogger("gem.timeline")
 store = JsonStore("timeline.json", {"days": {}, "open": None})
 KEEP_DAYS = 14
 GAP = 150               # seconds without a sample (away, locked) that end a stretch
+BREAK = 300             # away at least this long counts as a break from the PC
 SHORTEST = 10           # stretches shorter than this are alt-tab flicker
 MERGE_GAP = 180         # stretches of the same app this close together read as one
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -243,6 +244,9 @@ def _match_app(segs, app):
 @action("timeline_app", "When the user started, last used, or how long they've currently been on an app, game or "
         "site, from today's activity.", "app: str, which?: first|last|current, day?: today|yesterday")
 def timeline_app(app="", which="first", day="today"):
+    if not app and which == "current":
+        with _lock:                                 # "how long have I been playing": whatever's in front now
+            app = _open["app"] if _open and time.time() - _open["e"] <= GAP else ""
     if not app:
         raise ActionError("Which app?")
     today = _day_of(datetime.datetime.now())
@@ -272,6 +276,32 @@ def timeline_app(app="", which="first", day="today"):
     if total >= 60:
         first += ", and spent %s on it in total" % duration_phrase(int(total) // 60 * 60)
     return first + (". You're still on it." if live else ".")
+
+
+def session_start(now=None):
+    """When the current sitting at the PC began (no break of BREAK or more), or None if you're not on it."""
+    now = now or time.time()
+    segs = _segments(now - 86400, now)
+    if not segs or now - max(s["e"] for s in segs) > GAP:
+        return None
+    start = None
+    for s in reversed(segs):
+        if start is not None and start - s["e"] >= BREAK:
+            break
+        start = s["s"] if start is None else min(start, s["s"])
+    return start
+
+
+@action("pc_session", "How long the user has been at the PC since their last break.")
+def pc_session():
+    start = session_start()
+    if start is None:
+        return "You've only just sat down."
+    secs = int(time.time() - start) // 60 * 60
+    text = "You've been on the PC since %s, %s without a break." % (_clock(start), duration_phrase(max(60, secs)))
+    if secs >= 90 * 60:
+        text += " Maybe stretch your legs."
+    return text
 
 
 PARTS = {"morning": (5, 12), "afternoon": (12, 17), "evening": (17, 24), "night": (19, 29)}
