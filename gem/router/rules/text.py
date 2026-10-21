@@ -11,17 +11,20 @@ def register(rule):
           r"(?: selection| essay| paragraph| text)?$|^(?:what's|what is) the (?:word|character) count(?: of %s)?$"
           % (_THIS, _THIS), safe=False)
     def _(m, t):
-        if t.startswith("how long is") and not re.search(r"\b(?:this|that|it|selection|essay|text|paragraph)\b", t):
+        # "how long is it" is usually about something else (a film, a wait), so it needs the text named
+        if t.startswith("how long is") and not re.search(
+                r"\b(?:this|that|selection|selected|essay|text|paragraph|document|story)\b", t):
             return None
         return Match("text_stats", {"source": _source(m.group(1) or m.group(2) or "")}, False)
 
     @rule(r"^(?:how (?:do|would|should) (?:you|i|we|one) spell|how (?:is|do you say|are you meant to write) (.+?) "
-          r"(?:spelled|spelt)|spell(?: the word| out)?|what's the spelling of|what is the spelling of) ?(.*)$",
+          r"(?:spelled|spelt)|spell(?: the word| out)?|(?:what's |what is )?the spelling of|spelling of)(?: (.*))?$",
           safe=False)
     def _(m, t):
         word = (m.group(1) or m.group(2) or "").strip()
         word = re.sub(r"^(?:the word|the name)\s+", "", word)
-        if not word or len(word.split()) > 3 or word in ("it", "that", "this") or word.startswith("check"):
+        if not word or len(word.split()) > 3 or word in ("it", "that", "this") or word.startswith("check") \
+                or word.split()[0] in ("my", "your", "his", "her", "their"):
             return None                                 # "spell check this" is a grammar fix
         raw = re.search(re.escape(word).replace(r"\ ", r"[\s,]+"), said(), re.I)   # keep capitals: "Aarav"
         return Match("spell", {"word": raw.group(0) if raw else word}, False)

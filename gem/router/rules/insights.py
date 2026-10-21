@@ -7,9 +7,9 @@ from ..core import Match
 
 
 def register(rule):
-    # Activity timeline
+    # Activity timeline. These say what you've been doing out loud, so overheard talk never sets them off.
     @rule(r"^what (?:was i|were we|did i do|was i up to)(?: doing| working on| up to| on| watching| playing| "
-          r"looking at)?(?: on (?:the|my) (?:pc|computer))? (.+)$")
+          r"looking at)?(?: on (?:the|my) (?:pc|computer))? (.+)$", safe=False)
     def _(m, t):
         from ...skills.timeline import past_time
         rest = m.group(1)
@@ -23,30 +23,31 @@ def register(rule):
             return Match("timeline_day", {"day": "yesterday"})
         return None
 
-    @rule(r"^(?:show (?:me )?|open |what's )?(?:my )?(?:activity )?timeline(?: (?:for )?(today|yesterday))?$")
+    @rule(r"^(?:show (?:me )?|open |what's )?(?:my )?(?:activity )?timeline(?: (?:for )?(today|yesterday))?$",
+          safe=False)
     def _(m, t):
         return Match("timeline_day", {"day": m.group(1) or "today"})
 
     @rule(r"^when did i (?:first )?(?:start|open|begin|launch|get on|hop on|go on|boot up|load up|start playing|"
-          r"start watching|start using) (.+?)( today| yesterday)?$")
+          r"start watching|start using) (.+?)( today| yesterday)?$", safe=False)
     def _(m, t):
         return Match("timeline_app", {"app": m.group(1), "which": "first",
                                       "day": "yesterday" if m.group(2) == " yesterday" else "today"})
 
     @rule(r"^when (?:was i|did i) last (?:on|in|use|open|play|watch|using|playing|watching) (.+?)( today| yesterday)?$|"
-          r"^when did i (?:stop|close|quit|get off|leave) (.+?)( today| yesterday)?$")
+          r"^when did i (?:stop|close|quit|get off|leave) (.+?)( today| yesterday)?$", safe=False)
     def _(m, t):
         return Match("timeline_app", {"app": m.group(1) or m.group(3), "which": "last",
                                       "day": "yesterday" if (m.group(2) or m.group(4)) == " yesterday" else "today"})
 
     @rule(r"^how long have i been (?:on|using|at|sitting at) (?:the |my |this )?(?:pc|computer|laptop|desk|screen)"
           r"(?: for)?(?: without a break)?$|^how long have i been sitting here$|^when did i (?:last )?take a break$|"
-          r"^when was my last break$")
+          r"^when was my last break$", safe=False)
     def _(m, t):
         return Match("pc_session")
 
     @rule(r"^how long have i been (?:playing|watching|using|in|on|working on|doing) (.+?)(?: for)?$|"
-          r"^how long have i been (?:playing|gaming|watching|working)(?: for)?$")
+          r"^how long have i been (?:playing|gaming|watching|working)(?: for)?$", safe=False)
     def _(m, t):
         if re.search(r"\b(?:today|this week)\b", t):
             return None                     # a total: screen time below

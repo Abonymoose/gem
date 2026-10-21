@@ -185,9 +185,9 @@ def parse_when(text, now=None):
         hour, minute = int(tm.group(1)), int(tm.group(2) or 0)
         ampm = tm.group(3)
     elif re.search(r"\bnoon|midday\b", t):
-        hour, minute, ampm, tm = 12, 0, None, re.search(r"\bnoon|midday\b", t)
+        hour, minute, ampm, tm = 12, 0, "pm", re.search(r"\bnoon|midday\b", t)
     elif re.search(r"\bmidnight\b", t):
-        hour, minute, ampm, tm = 0, 0, None, re.search(r"\bmidnight\b", t)
+        hour, minute, ampm, tm = 0, 0, "am", re.search(r"\bmidnight\b", t)
     else:
         tm = re.search(r"\b(?:at|for|by)\s+(\d{1,2})\b(?!\s*(?:minutes?|mins?|hours?|seconds?|percent|%))", t)
         if tm:
@@ -201,18 +201,21 @@ def parse_when(text, now=None):
         hour += 12
     elif ampm == "am" and hour == 12:
         hour = 0
-    if dm and dm.group(1) == "tonight" and hour < 12:
-        hour += 12
+    if dm and dm.group(1) == "tonight":
+        if hour == 0 or (hour == 12 and ampm is None):     # "tonight at 12", "midnight tonight"
+            hour, day_offset = 0, 1
+        elif hour < 12:
+            hour += 12
 
     if weekday_today and now.replace(hour=hour, minute=minute, second=0, microsecond=0) > now:
         day_offset = 0
     base = now + datetime.timedelta(days=day_offset or 0)
     dt = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if ampm is None and hour <= 12 and day_offset is None:
-        # "at 7" means the next 7 o'clock, morning or evening.
+        # "at 7" means the next 7 o'clock, morning or evening; "at 12" (and "quarter to 1") too.
         candidates = [dt, dt + datetime.timedelta(hours=12), dt + datetime.timedelta(days=1)]
         if hour == 12:
-            candidates = [dt, dt + datetime.timedelta(days=1)]
+            candidates = [dt - datetime.timedelta(hours=12), dt, dt + datetime.timedelta(hours=12)]
         dt = next(c for c in candidates if c > now)
     elif day_offset is None and dt <= now:
         dt += datetime.timedelta(days=1)

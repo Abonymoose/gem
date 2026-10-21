@@ -89,7 +89,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Volume | "volume 40", "turn it down", "turn the volume down to 20", "mute Spotify", "lower Discord", "Spotify volume 30" |
 | Media | "pause", "next song", "play it again", "what's playing", "play lofi beats on YouTube", "play Blinding Lights on Spotify" (opens it in Spotify's search) |
 | Windows | "show desktop", "snap this left", "minimize", "close this window", "take a screenshot of this window", "snip" |
-| Timers & alarms | "10 minute timer for pasta", "set an alarm for half past 6", "how much time is left", "add 5 minutes to the timer" / "5 more minutes", "pause the timer" / "resume the timer", "cancel the pasta timer", "snooze". Named timers remember their length: next time "set a pasta timer" is enough |
+| Timers & alarms | "10 minute timer for pasta", "set an alarm for half past 6" (a time without AM/PM, 12 included, is the next one on the clock), "how much time is left", "add 5 minutes to the timer" / "5 more minutes", "pause the timer" / "resume the timer", "cancel the pasta timer", "snooze". Named timers remember their length: next time "set a pasta timer" is enough |
 | Reminders | "remind me to call mom in 15 minutes", "remind me tomorrow at 8 am to submit the essay", "remind me to drink water every hour", "remind me to stretch every 30 minutes", "every morning remind me to check my email", "remind me to take out the trash every Monday at 7 pm" (repeating ones keep their time even if the PC was asleep) |
 | Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" (a heads-up comes 5 minutes before) |
 | To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note that…", "read my notes" |
@@ -246,7 +246,9 @@ to Start search. Turn on **Start with Windows** in the tray menu or Settings to 
   before any AI call.
 - Notes, to-dos, reminders and memory are stored only in `.gem` on your PC.
 - Screen time and the timeline (which app was in front, with its window title) are recorded only while you're
-  active, stay in `.gem` (`usage.json`, `timeline.json`) and the timeline is cleared after two weeks.
+  active, stay in `.gem` (`usage.json`, `timeline.json`) and the timeline is cleared after two weeks. Questions
+  about it ("what was I working on", "when did I start Valorant") are only answered when they're for Gem, so
+  someone else's conversation can't get your activity read out loud.
 - Your screen only leaves the PC when you ask about it (explain, read, highlight, autofill, remember this). In
   always-listening mode, overheard speech like "remember that" never sends it on its own: it needs Gem's name,
   push-to-talk, an ongoing conversation, or the AI agreeing the request was for Gem.

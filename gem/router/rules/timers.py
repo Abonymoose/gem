@@ -68,10 +68,11 @@ def register(rule):
             return None
         return Match("timer_pause", {"pause": pause, "label": label})
 
-    @rule(r"^(?:set |start |make |put on )?(?:an? |the |my )?(.+?) timer$")
+    @rule(r"^(set |start |make |put on )?(?:an? |the |my )?(.+?) timer$")
     def _(m, t):
-        label = _remembered_timer(m.group(1))
-        return Match("set_timer", {"label": label}) if label else None
+        # "set a pasta timer" can be acted on when overheard; a bare "the pasta timer" needs Gem's name
+        label = _remembered_timer(m.group(2))
+        return Match("set_timer", {"label": label}, bool(m.group(1))) if label else None
 
     @rule(r"^how (?:much time|long) (?:is )?(?:left|remaining)(?: on (?:my |the )?(.+?) ?timer)?$|"
           r"^time left(?: on (?:my |the )?timer)?$")

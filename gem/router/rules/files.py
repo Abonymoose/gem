@@ -21,7 +21,7 @@ def register(rule):
 
     @rule(r"^(?:what (?:was i|have i been|am i) (?:just )?working on|(?:show|list|what are)(?: me)? (?:my )?"
           r"recent (?:files|documents|docs)|what (?:files|documents) (?:did i|have i) (?:open|opened|use|used|"
-          r"work on|worked on)(?: recently| today| lately)?)$")
+          r"work on|worked on)(?: recently| today| lately)?)$", safe=False)
     def _(m, t):
         return Match("recent_files", {})
 

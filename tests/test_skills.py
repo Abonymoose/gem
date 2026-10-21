@@ -118,6 +118,8 @@ class TimerControlsTest(unittest.TestCase):
         for said in ("set a pasta timer", "pasta timer", "set a timer for pasta"):
             with self.subTest(said=said):
                 self.assertEqual(route(said).args, {"label": "pasta"})
+        self.assertTrue(route("set a pasta timer").safe)
+        self.assertFalse(route("the pasta timer").safe)                  # overheard talk about it: needs Gem's name
         self.assertIn("12 minute timer for pasta", timers.set_timer(label="pasta"))
 
     def test_cancel_by_name(self):
@@ -204,11 +206,17 @@ class TextToolsTest(unittest.TestCase):
                 self.assertEqual(route(said).action, "text_stats")
         self.assertEqual(route("word count of my clipboard").args["source"], "clipboard")
         self.assertIsNone(route("how long is the movie"))
+        self.assertIsNone(route("how long is it"))                       # a film, a wait: not the selected text
         for said, word in (("how do you spell necessary", "necessary"), ("how is Massachusetts spelled", "Massachusetts"),
-                           ("spell the word accommodate", "accommodate"), ("how do you spell Aarav", "Aarav")):
+                           ("spell the word accommodate", "accommodate"), ("how do you spell Aarav", "Aarav"),
+                           ("spelling of rhythm", "rhythm"), ("what's the spelling of rhythm", "rhythm")):
             with self.subTest(said=said):
                 self.assertEqual(route(said).args, {"word": word})
         self.assertEqual(route("spell check this").action, "text_tool")
+        for said in ("spelling bee", "spellbound", "spell my name"):
+            with self.subTest(said=said):
+                m = route(said)
+                self.assertFalse(m and m.action == "spell", m and m.args)
 
 
 class AmbientRoutingTest(unittest.TestCase):

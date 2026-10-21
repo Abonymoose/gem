@@ -79,6 +79,20 @@ class WhenTest(unittest.TestCase):
             with self.subTest(spoken=spoken):
                 self.assertEqual(when(spoken), expected)
         self.assertEqual(normalize_time_words("quarter to one"), "12:45")
+        self.assertEqual(when("at quarter to 1"), "Thu 00:45")                  # tonight, not tomorrow lunchtime
+
+    def test_twelve(self):
+        # A bare 12 is the next 12 o'clock, like every other hour; noon and midnight say which.
+        cases = {"at 12": "Thu 00:00", "at 12:30": "Thu 00:30", "at noon": "Thu 12:00", "at midnight": "Thu 00:00",
+                 "tonight at 12": "Thu 00:00", "midnight tonight": "Thu 00:00", "at 12 pm": "Thu 12:00"}
+        for spoken, expected in cases.items():
+            with self.subTest(spoken=spoken):
+                self.assertEqual(when(spoken), expected)
+        morning = datetime.datetime(2026, 10, 21, 9, 0)
+        for spoken, expected in {"at 12": "Wed 12:00", "midnight": "Thu 00:00", "at noon": "Wed 12:00",
+                                 "at quarter to 1": "Wed 12:45"}.items():
+            with self.subTest(spoken=spoken, at="9 am"):
+                self.assertEqual(parse_when(spoken, morning)[0].strftime("%a %H:%M"), expected)
         self.assertEqual(normalize_time_words("5 minutes past 3"), "3:05")
         self.assertEqual(normalize_time_words("add 5 to 10"), "add 5 to 10")
 

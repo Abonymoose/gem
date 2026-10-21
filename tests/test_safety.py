@@ -29,6 +29,16 @@ CHATTER = [
     "i'm going to the store in 10 minutes",
     "he told me to stop",
     "i'll call you back in 5 minutes",
+    # questions about what you've been doing get answered out loud
+    "what was i doing at 3",
+    "what was i working on",
+    "when did i start valorant",
+    "when was i last on discord",
+    "how long have i been playing",
+    "how long have i been on the computer",
+    "show my timeline",
+    "show my recent files",
+    "how long is it",
 ]
 
 # Anything that sends the screen to the AI.
