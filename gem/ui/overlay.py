@@ -175,7 +175,7 @@ class Overlay:
         self.bridge.spotlight.emit(bool(on))
 
     def suggest(self, monitor, items, seconds=40.0):
-        """Autofill: show what goes where (items: [((x1, y1, x2, y2) 0..1, label, text, why)])."""
+        """Autofill: show what goes where (items: dicts with box 0..1, label, text, why, n, blank, dark)."""
         self.bridge.suggest.emit({"monitor": monitor, "items": items, "seconds": seconds})
 
     def suppress(self, seconds):

@@ -89,13 +89,17 @@ class HighlightOverlay(QWidget):
         self.update()
 
     def show_callouts(self, phys_monitor, items, seconds=40.0):
-        """Autofill: items are [((x1, y1, x2, y2) 0..1 of the monitor, label, text to fill in, why)]."""
+        """Autofill: items are dicts with box (0..1 of the monitor), label, text, why, n, blank (write the answer
+        inside the box) and dark (the screen under it is dark)."""
         screen = _screen_for(phys_monitor)
         g = screen.geometry()
         self.boxes, self.callouts = [], []
-        for n, ((x1, y1, x2, y2), label, text, why) in enumerate(items, 1):
+        for n, it in enumerate(items, 1):
+            x1, y1, x2, y2 = it["box"]
             r = QRectF(x1 * g.width(), y1 * g.height(), (x2 - x1) * g.width(), (y2 - y1) * g.height())
-            self.callouts.append({"rect": r.adjusted(-4, -4, 4, 4), "label": label, "text": text, "why": why, "n": n})
+            self.callouts.append({"rect": r.adjusted(-4, -4, 4, 4), "inner": r, "label": it.get("label", ""),
+                                  "text": it.get("text", ""), "why": it.get("why", ""), "n": it.get("n", n),
+                                  "blank": bool(it.get("blank")), "dark": bool(it.get("dark"))})
         self.until = time.monotonic() + seconds
         self.t0 = time.monotonic()
         self._cover(screen)
@@ -212,7 +216,11 @@ class HighlightOverlay(QWidget):
             g.setColorAt(1.0, T.alpha(QColor(236, 72, 153), a))
             p.setPen(QPen(g, 2.2))
             p.drawRoundedRect(r, 6, 6)
-            # The card: what to put there, and why.
+            if c.get("blank"):
+                self._ghost(p, c, mono, a)
+                self._badge(p, r, n, a)
+                continue
+            # No blank to write in: a card beside it with what to put there, and why.
             fm_t, fm_l, fm_w = QFontMetrics(mono), QFontMetrics(f_label), QFontMetrics(f_why)
             head = "%d  ·  %s" % (n, c["label"]) if c["label"] else str(n)
             cw = max(fm_t.horizontalAdvance(c["text"]), fm_l.horizontalAdvance(head),
@@ -253,13 +261,53 @@ class HighlightOverlay(QWidget):
                 p.setPen(T.alpha(QColor(190, 180, 210), a))
                 p.drawText(QRectF(card.left() + 14, yy, cw - 28, fm_w.height()), Qt.AlignLeft | Qt.AlignVCenter,
                            fm_w.elidedText(c["why"], Qt.ElideRight, int(cw - 28)))
-            # Number badge on the spot.
+            self._badge(p, r, n, a)
+
+    def _badge(self, p, r, n, a):
+        """The suggestion's number, on the spot's corner (matches "copy number 2")."""
+        p.setPen(Qt.NoPen)
+        p.setBrush(T.alpha(QColor(139, 92, 246), a))
+        p.drawEllipse(QPointF(r.left(), r.top()), 9, 9)
+        p.setFont(T.font(9, QFont.Bold))
+        p.setPen(T.alpha(QColor(255, 255, 255), a))
+        p.drawText(QRectF(r.left() - 9, r.top() - 9, 18, 18), Qt.AlignCenter, str(n))
+
+    def _ghost(self, p, c, mono, a):
+        """Write the answer inside the blank, like it's already filled in (only drawn, never typed)."""
+        inner = c["inner"]
+        text = c["text"]
+        size = int(max(11, min(34, inner.height() * 0.6)))              # pixels, in proportion to the blank
+        font = QFont(mono)
+        font.setPixelSize(size)
+        fm = QFontMetrics(font)
+        while fm.horizontalAdvance(text) > inner.width() - 12 and size > 11:   # shrink to fit the blank
+            size -= 1
+            font.setPixelSize(size)
+            fm = QFontMetrics(font)
+        tw = fm.horizontalAdvance(text) + 12
+        area = QRectF(inner.left(), inner.top(), max(inner.width(), tw), inner.height())
+        # A soft wash so the answer reads cleanly over underlines or gridlines.
+        wash = QColor(30, 22, 48) if c.get("dark") else QColor(250, 247, 255)
+        p.setPen(Qt.NoPen)
+        p.setBrush(T.alpha(wash, 0.88 * a))
+        p.drawRoundedRect(area.adjusted(1, 1, -1, -1), 5, 5)
+        ink = QColor(221, 205, 255) if c.get("dark") else QColor(109, 40, 217)
+        p.setFont(font)
+        p.setPen(T.alpha(ink, a))
+        p.drawText(area.adjusted(6, 0, -6, 0), Qt.AlignLeft | Qt.AlignVCenter, text)
+        if c.get("why"):
+            # The working, small, just under the blank.
+            f = T.font(9)
+            fw = QFontMetrics(f)
+            tip = QRectF(area.left(), area.bottom() + 4, min(fw.horizontalAdvance(c["why"]) + 14, 420), fw.height() + 6)
+            if tip.bottom() > self.height() - 4:
+                tip.moveBottom(area.top() - 4)
             p.setPen(Qt.NoPen)
-            p.setBrush(T.alpha(QColor(139, 92, 246), a))
-            p.drawEllipse(QPointF(r.left(), r.top()), 9, 9)
-            p.setFont(T.font(9, QFont.Bold))
-            p.setPen(T.alpha(QColor(255, 255, 255), a))
-            p.drawText(QRectF(r.left() - 9, r.top() - 9, 18, 18), Qt.AlignCenter, str(n))
+            p.setBrush(T.alpha(QColor(18, 12, 30), 0.88 * a))
+            p.drawRoundedRect(tip, 8, 8)
+            p.setFont(f)
+            p.setPen(T.alpha(QColor(225, 215, 245), a))
+            p.drawText(tip, Qt.AlignCenter, fw.elidedText(c["why"], Qt.ElideRight, int(tip.width() - 10)))
 
     def _outlines(self, p):
         t = time.monotonic() - self.t0
