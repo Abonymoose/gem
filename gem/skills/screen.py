@@ -16,7 +16,10 @@ INSTRUCTION = (
     "You are Gem, a voice assistant looking at a screenshot of the user's screen. The window they're using is "
     "titled: {title}. Answer their question about what's on screen for someone listening: two to four short plain "
     "sentences, no markdown, lists or URLs. Be specific about what you can actually see (names, numbers, error "
-    "text). If it's an error, say what it means and the most likely fix. If you can't make it out, say so.")
+    "text). If it's an error, say what it means and the most likely fix.\n"
+    "Only say what you can actually read on the screen. Read numbers, versions and names character by character. "
+    "Never guess or fill in anything that isn't visible; if the answer isn't on screen, say so plainly instead. "
+    "True facts about this PC, only for questions about the computer itself: {facts}.")
 # Same, but also pointing at what the answer is about, so Gem can outline it on screen.
 POINT = INSTRUCTION + (
     " The black band at the bottom of the image is padding; ignore it. Reply with JSON only: {{\"answer\": \"...\", "
@@ -24,6 +27,14 @@ POINT = INSTRUCTION + (
     "integers from 0 to 1000 across the whole image (0,0 top left, 1000,1000 bottom right). Highlight the exact "
     "thing the answer is about (the error text, the button, the paragraph), at most 3, tight boxes. Use an empty "
     "list if nothing specific fits.")
+# The screen in full-detail square pieces, so small text stays readable.
+TILED = INSTRUCTION + (
+    " You get the screen as {n} overlapping square pieces from left to right: image 1 is the leftmost part. Reply "
+    "with JSON only: {{\"answer\": \"...\", \"highlights\": [{{\"label\": \"two or three words\", \"image\": 1, "
+    "\"box\": [x1, y1, x2, y2]}}]}}. \"image\" says which piece the box is in; box coordinates are integers from 0 to "
+    "1000 across that piece (0,0 top left, 1000,1000 bottom right). Highlight the exact thing the answer is about "
+    "(the error text, the button, the paragraph), at most 3, tight boxes. Use an empty list if nothing specific fits.")
+TILES_COST = 4600           # two full-detail pieces against the vision model's per-minute allowance
 
 
 def grab(with_box=False, full=False):
@@ -159,7 +170,7 @@ def snap(img, box):
     W, H = img.size
     x1, y1, x2, y2 = box[0] * W, box[1] * H, box[2] * W, box[3] * H
     bw, bh = x2 - x1, y2 - y1
-    mx, my = max(16.0, bw * 0.15), max(18.0, bh * 0.45)
+    mx, my = max(20.0, bw * 0.15), max(40.0, bh * 0.5)      # look a line or so beyond the rough box
     rx1, ry1, rx2, ry2 = int(max(0, x1 - mx)), int(max(0, y1 - my)), int(min(W, x2 + mx)), int(min(H, y2 + my))
     if rx2 - rx1 < 8 or ry2 - ry1 < 8:
         return box
@@ -201,23 +212,79 @@ def snap(img, box):
     return new
 
 
+def _facts():
+    try:
+        from .system import pc_facts
+        return pc_facts() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _pieces(img):
+    """Overlapping full-height squares covering a wide screen, left to right: [(left x, square image)].
+    Each fits the vision model's picture budget at (nearly) full detail, unlike one shrunk screenshot."""
+    W, H = img.size
+    if W <= H * 1.15:
+        return [(0, img)]
+    n = 2 if W <= H * 1.9 else 3
+    step = (W - H) / float(n - 1)
+    return [(int(round(i * step)), img.crop((int(round(i * step)), 0, int(round(i * step)) + H, H))) for i in range(n)]
+
+
 def locate(img, question, title=""):
-    """First look: (spoken answer, rough boxes as [((x1, y1, x2, y2) 0..1 of img, label)])."""
+    """First look: (spoken answer, boxes as [((x1, y1, x2, y2) 0..1 of img, label)], full_detail).
+    Uses full-detail pieces when the allowance allows, otherwise one shrunk picture."""
     from ..brain import _parse_json
+    W, H = img.size
+    model = (svc.config["ai"].get("vision_models") or ["qwen/qwen3.8-27b"])[0]
+    pieces = _pieces(img)
+    raw = None
+    # Full detail costs about twice the daily allowance of one picture; past ~60% of the day's cap, save it.
+    daily_ok = svc.brain.used_today(model) < float(svc.config["ai"].get("vision_daily_tokens", 200000)) * 0.6
+    if len(pieces) > 1 and daily_ok and svc.brain.budget(model) >= TILES_COST:
+        prompt = TILED.format(title=title or "unknown", facts=_facts(), n=len(pieces))
+        urls = []
+        for _, piece in pieces:
+            p = piece.copy()
+            p.thumbnail((1080, 1080))
+            urls.append(data_url(p))
+        try:
+            raw = svc.brain.see(prompt, question, urls, max_tokens=500)
+        except BrainUnavailable:
+            svc.brain._cooldown.pop(model, None)     # too big for what's left this minute: try the smaller picture
+            log.info("Full-detail look refused; trying one picture")
+    if raw is not None:
+        out = _parse_json(raw)
+        if not isinstance(out, dict) or "answer" not in out:
+            return raw.strip(), [], True
+        boxes = []
+        for h in (out.get("highlights") or [])[:3]:
+            try:
+                k = min(len(pieces), max(1, int(h.get("image") or 1))) - 1
+                x1, y1, x2, y2 = [float(v) / 1000.0 for v in h["box"]]
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+            left, side = pieces[k][0], float(H)
+            box = (max(0.0, (left + min(x1, x2) * side) / W), max(0.0, min(y1, y2)),
+                   min(1.0, (left + max(x1, x2) * side) / W), min(1.0, max(y1, y2)))
+            if (box[2] - box[0]) * W >= 6 and (box[3] - box[1]) * H >= 6 and (box[2] - box[0]) * (box[3] - box[1]) < 0.85:
+                boxes.append((box, str(h.get("label") or "")[:28]))
+        return str(out["answer"]).strip(), boxes, True
     square, sx, sy = _squared(img)
-    raw = svc.brain.see(POINT.format(title=title or "unknown"), question, data_url(square), max_tokens=500)
+    raw = svc.brain.see(POINT.format(title=title or "unknown", facts=_facts()), question, data_url(square),
+                        max_tokens=500)
     out = _parse_json(raw)
     if not isinstance(out, dict) or "answer" not in out:
-        return raw.strip(), []                       # plain text answer: still fine, just nothing to outline
-    return str(out["answer"]).strip(), _boxes(out.get("highlights"), sx, sy)
+        return raw.strip(), [], False                # plain text answer: still fine, just nothing to outline
+    return str(out["answer"]).strip(), _boxes(out.get("highlights"), sx, sy), False
 
 
-def _highlight_later(img, monitor, boxes, question, seconds):
-    """Sharpen the boxes with a zoomed-in second look, then draw them (the answer is already being spoken).
-    Skipped when the vision model's per-minute allowance is low, so it never costs you your next question."""
+def _highlight_later(img, monitor, boxes, question, seconds, full_detail=False):
+    """Sharpen the boxes, then draw them (the answer is already being spoken). The zoomed second look is only
+    needed after a shrunk first look, and is skipped when the allowance is low, so it never costs your next question."""
     sharp = boxes
     model = (svc.config["ai"].get("vision_models") or ["qwen/qwen3.8-27b"])[0]
-    if svc.brain.budget(model) >= REFINE_COST:
+    if not full_detail and svc.brain.budget(model) >= REFINE_COST:
         try:
             sharp = refine(img, boxes, question)
         except Exception:
@@ -244,16 +311,17 @@ def explain_screen(question=""):
     svc.state.update(thinking=True)
     img, title, monitor = grab(with_box=True, full=True)
     try:
-        answer, boxes = locate(img, question, title)
+        answer, boxes, full_detail = locate(img, question, title)
     except BrainUnavailable as e:
         raise ActionError(str(e))
     if not answer:
         raise ActionError("I couldn't read the screen just now.")
     if boxes and svc.overlay and hasattr(svc.overlay, "highlight") and (svc.config.get("appearance") or {}).get(
             "screen_highlights", True):
-        threading.Thread(target=_highlight_later, args=(img, monitor, boxes, question, max(8.0, len(answer) / 12.0)),
-                         name="highlight", daemon=True).start()
-    log.info("Screen question %r -> %d chars, %d highlight(s)", question, len(answer), len(boxes))
+        threading.Thread(target=_highlight_later, args=(img, monitor, boxes, question, max(8.0, len(answer) / 12.0),
+                                                        full_detail), name="highlight", daemon=True).start()
+    log.info("Screen question %r -> %d chars, %d highlight(s), %s", question, len(answer), len(boxes),
+             "full detail" if full_detail else "one picture")
     return card("screen", answer)
 
 

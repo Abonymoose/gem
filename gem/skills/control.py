@@ -138,6 +138,21 @@ def help_text():
             "Say shut up for a bit when you need quiet.")
 
 
+@action("voice_volume", "Gem's own speaking volume (not the PC's): set 0-100, or change it (e.g. -15 quieter).",
+        "level?: number, change?: number")
+def voice_volume(level=None, change=None):
+    from ..cards import card
+    from ..config import SETTINGS_FILE, _read_json, _write_json
+    cur = float(svc.config["voice"].get("volume", 0.9)) * 100
+    new = float(level) if level is not None else cur + float(change or 0)
+    new = max(10, min(100, int(round(new))))
+    svc.config["voice"]["volume"] = round(new / 100.0, 2)       # the voice reads this every time it speaks
+    data = _read_json(SETTINGS_FILE, {})
+    data.setdefault("voice", {})["volume"] = svc.config["voice"]["volume"]
+    _write_json(SETTINGS_FILE, data)
+    return card("volume", "My voice is at %d now." % new, level=new, header="Gem's voice")
+
+
 @action("quit_gem", "Close Gem.")
 def quit_gem():
     svc.assistant.quit()

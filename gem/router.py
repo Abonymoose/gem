@@ -34,7 +34,7 @@ def normalize(text):
     t = re.sub(r"\b([ap])\.m\.", r"\1m", t)
     trailing_name = bool(re.search(r",\s*%s[.!?]*$" % _NAME, t))
     t = re.sub(r"[^\w\s':%+-]", " ", t)
-    t = re.sub(r"^(?:(?:hey|hi|ok|okay|yo|oi)\s+)?%s\b\s*" % _NAME, "", t.strip())
+    t = re.sub(r"^(?:(?:hey|hi|ok|okay|yo|oi)\s+)?%s\b(?!'s|s\b)\s*" % _NAME, "", t.strip())   # keep "gem's ..."
     if trailing_name:
         t = re.sub(r"\s*\b%s\s*$" % _NAME, "", t)
     for _ in range(2):
@@ -725,6 +725,42 @@ def _rules():
     @rule(r"^(?:hide|clear|remove|get rid of) (?:the |those |that |these )?(?:highlights?|outlines?|boxes)$")
     def _(m, t):
         return Match("clear_highlights")
+
+    # Gem's own voice volume (not the PC's)
+    @rule(r"\b(?:your|gem'?s|gems) (?:voice |own |speaking )?volume\b.*?\b(?:to|at) (\d{1,3})(?: percent|%)?$")
+    def _(m, t):
+        return Match("voice_volume", {"level": int(m.group(1))})
+
+    @rule(r"^(?:reduce|lower|decrease|turn down) (?:your|gem'?s|gems) (?:voice |own )?volume$|^(?:talk|speak) "
+          r"(?:a (?:bit|little) )?(?:quieter|softer|more quietly|more softly)$|^(?:be|get) quieter$")
+    def _(m, t):
+        return Match("voice_volume", {"change": -15})
+
+    @rule(r"^(?:increase|raise|turn up) (?:your|gem'?s|gems) (?:voice |own )?volume$|^(?:talk|speak) "
+          r"(?:a (?:bit|little) )?(?:louder|up)$|^(?:be|get) louder$")
+    def _(m, t):
+        return Match("voice_volume", {"change": 15})
+
+    @rule(r"^(?:take a screenshot|screenshot (?:this|that|my screen)|look at (?:my |the |this )?screen|check (?:my |the )?"
+          r"screen) and (.+)$")
+    def _(m, t):
+        # "Take a screenshot and tell me X" is a question about the screen, not a request to save a picture.
+        raw = re.search(r"\band\s+(.+?)[.?!]*$", _raw or t, re.I)
+        return Match("explain_screen", {"question": raw.group(1) if raw else m.group(1)})
+
+    @rule(r"\bhighlight (?:the |my |what(?:'s| is) )?(.+?)(?: (?:on|in) (?:my|the) screen)?(?: right now| for me)?$")
+    def _(m, t):
+        # "highlight ..." anywhere in the sentence, even after a misheard start ("I will highlight ...").
+        if re.search(r"\b(?:highlights?|outlines?)\b", m.group(1)) or t.startswith(("hide", "clear", "remove")):
+            return None
+        return Match("explain_screen", {"question": _raw.strip() or t})
+
+    @rule(r"^(?:what (?:pc|computer|laptop|motherboard|cpu|processor|gpu|graphics card|graphics) (?:do i have|is this|"
+          r"am i using|is in (?:my|this) (?:pc|computer))|what(?:'s| is| are) (?:my|this) (?:pc|computer|laptop)(?:'s)? "
+          r"(?:model|specs)|(?:what are )?my (?:pc |computer )?specs|how much ram do i have|what(?:'s| is) my "
+          r"(?:gpu|graphics card|processor|motherboard))$")
+    def _(m, t):
+        return Match("pc_specs")
 
     # Files
     @rule(r"^(?:find|show(?: me)?|where(?:'s| is| are)|look for|search for|get|pull up|list) (?:me )?"

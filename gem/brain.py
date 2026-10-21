@@ -72,8 +72,10 @@ def _clean_plan(raw, source):
     # Actions confirm themselves; drop a bare "Done." / "Class added." on top.
     if acts and not cont and reply and "?" not in reply and len(reply.split()) <= 5:
         reply = ""
-    # A web answer speaks for itself; the model's own guess would be stale.
-    if any(a["name"] == "web_answer" for a in acts):
+    # A web answer speaks for itself; the model's own guess would be stale. The planner can't see the screen,
+    # so anything it says about it would be made up: the screen actions answer for themselves.
+    if any(a["name"] in ("web_answer", "explain_screen", "copy_screen_text", "screen_save", "screen_find")
+           for a in acts):
         reply = ""
     return {
         "addressed": addressed,
@@ -127,6 +129,22 @@ class Brain:
         reset = (int(m.group(1) or 0) * 60 + float(m.group(2))) if m else 60.0
         self._limits[model] = (left, limit, time.time() + reset)
 
+    def _count(self, model, tokens):
+        """Add to today's token count for a model (the free tier also has a daily cap per model)."""
+        from .config import runtime
+        today = datetime.date.today().isoformat()
+        with runtime as d:
+            usage = d.setdefault("ai_usage", {})
+            if usage.get("day") != today:
+                usage.clear()
+                usage["day"] = today
+            usage[model] = int(usage.get(model, 0)) + int(tokens)
+
+    def used_today(self, model):
+        from .config import runtime
+        usage = runtime.data.get("ai_usage") or {}
+        return int(usage.get(model, 0)) if usage.get("day") == datetime.date.today().isoformat() else 0
+
     def budget(self, model):
         """Tokens a model can probably still take this minute (its full allowance if we haven't heard)."""
         left, limit, refill_at = self._limits.get(model, (None, None, 0))
@@ -167,9 +185,11 @@ class Brain:
                     raise BrainUnavailable("My Groq API key was rejected. Check GROQ_API_KEY.")
                 continue
             try:
-                content = r.json()["choices"][0]["message"].get("content") or ""
+                body = r.json()
+                content = body["choices"][0]["message"].get("content") or ""
             except Exception:
                 continue
+            self._count(model, (body.get("usage") or {}).get("total_tokens") or 0)
             if json_mode and _parse_json(content) is None:
                 log.warning("Groq %s returned invalid JSON: %r", model, content[:200])
                 continue
@@ -248,10 +268,11 @@ class Brain:
         return _parse_json(content) if json_mode else content.strip()
 
     def see(self, instruction, question, image_url, max_tokens=400):
-        """Answer a question about an image (a data: URL) with a vision model."""
+        """Answer a question about an image (a data: URL, or a list of them) with a vision model."""
+        urls = image_url if isinstance(image_url, (list, tuple)) else [image_url]
         messages = [{"role": "system", "content": instruction},
-                    {"role": "user", "content": [{"type": "text", "text": question},
-                                                 {"type": "image_url", "image_url": {"url": image_url}}]}]
+                    {"role": "user", "content": [{"type": "text", "text": question}] +
+                     [{"type": "image_url", "image_url": {"url": u}} for u in urls]}]
         content, _ = self._post(messages, max_tokens=max_tokens, temperature=0.2,
                                 models=self.cfg.get("vision_models") or ["qwen/qwen3.8-27b"])
         return content.strip()

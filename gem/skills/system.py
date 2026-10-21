@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+import re
 import socket
 import subprocess
 import time
@@ -178,6 +179,54 @@ def _do_power(command):
         ctypes.windll.powrprof.SetSuspendState(command == "hibernate", True, False)
         return None
     return None
+
+
+# ── This PC ──────────────────────────────────────────────────────────────────
+
+_facts = {}
+
+
+def pc_facts():
+    """A one-line, true description of this PC (cached): maker/model or motherboard, CPU, GPU, RAM, Windows."""
+    if "text" in _facts:
+        return _facts["text"]
+    import json as _json
+    ps = ("$c=Get-CimInstance Win32_ComputerSystem; $b=Get-CimInstance Win32_BaseBoard; "
+          "$p=(Get-CimInstance Win32_Processor | Select-Object -First 1).Name; "
+          "$g=(Get-CimInstance Win32_VideoController | ForEach-Object Name) -join ', '; "
+          "$o=Get-CimInstance Win32_OperatingSystem; "
+          "@{maker=$c.Manufacturer; model=$c.Model; board=($b.Manufacturer + ' ' + $b.Product); cpu=$p; gpu=$g; "
+          "ram=[math]::Round($c.TotalPhysicalMemory/1GB); os=$o.Caption} | ConvertTo-Json -Compress")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+        d = _json.loads(r.stdout)
+    except Exception as e:
+        log.debug("PC facts failed: %s", e)
+        return ""
+    generic = ("system manufacturer", "to be filled", "default string", "o.e.m.", "")
+    maker, model = (d.get("maker") or "").strip(), (d.get("model") or "").strip()
+    tidy = lambda s: re.sub(r"\s*(?:Technology\s+)?(?:Co\.?,?\s*Ltd\.?|Inc\.?|Corporation|COMPUTER INC\.?)\s*", " ",
+                            s or "").strip()
+    if maker.lower() in generic or model.lower() in generic or re.match(r"^[abhxz]\d{3}", model.lower()):
+        who = "a custom-built PC with a %s motherboard" % tidy(d.get("board"))
+    else:
+        who = "a %s %s" % (tidy(maker), model)
+    _facts["text"] = "%s; CPU %s; graphics %s; %s GB RAM; %s" % (
+        who, (d.get("cpu") or "?").strip(), (d.get("gpu") or "?").strip(), d.get("ram") or "?",
+        (d.get("os") or "Windows").replace("Microsoft ", ""))
+    return _facts["text"]
+
+
+@action("pc_specs", "Say what this PC is: maker and model (or motherboard), CPU, graphics card, RAM and Windows "
+        "version. Use for 'what computer/laptop/PC do I have', 'what's my GPU', 'how much RAM do I have'.")
+def pc_specs():
+    facts = pc_facts()
+    if not facts:
+        raise ActionError("I couldn't read this PC's details just now.")
+    parts = facts.split("; ")
+    return "This is %s, with %s." % (parts[0], ", ".join(parts[1:]).replace("CPU ", "an ").replace("graphics ", "")
+                                     .replace(" GB RAM", " gigabytes of RAM"))
 
 
 # ── Info ─────────────────────────────────────────────────────────────────────
