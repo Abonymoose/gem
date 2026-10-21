@@ -79,17 +79,31 @@ def _now_text():
 
 
 def _parse_json(text):
-    text = (text or "").strip()
+    """The JSON object in a model's reply, even with reasoning, code fences or chatter around it."""
+    text = re.sub(r"<think>.*?(?:</think>|$)", "", text or "", flags=re.S).strip()     # reasoning models (backups)
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
     try:
         return json.loads(text)
     except Exception:
-        m = re.search(r"\{.*\}", text, re.S)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                pass
+        pass
+    decoder = json.JSONDecoder()
+    for m in list(re.finditer(r"\{", text))[:20]:          # the first complete object, not first "{" to last "}"
+        try:
+            obj, _ = decoder.raw_decode(text, m.start())
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            return obj
     return None
+
+
+def _flag(value, default=True):
+    """A yes/no from a model, which sometimes writes "false" as a string."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "no", "0", "")
+    return bool(value)
 
 
 def _clean_plan(raw, source):
@@ -101,9 +115,9 @@ def _clean_plan(raw, source):
             acts.append({"name": a["name"], "args": a.get("args") if isinstance(a.get("args"), dict) else {}})
         elif isinstance(a, dict):
             log.warning("Model asked for unknown action %r", a.get("name"))
-    addressed = bool(raw.get("addressed", True)) or source != "open"
+    addressed = _flag(raw.get("addressed")) or source != "open"
     reply = str(raw.get("reply") or "").strip() if addressed else ""
-    cont = bool(raw.get("continue")) and bool(acts)
+    cont = _flag(raw.get("continue"), False) and bool(acts)
     # Actions confirm themselves; drop a bare "Done." / "Class added." on top.
     if acts and not cont and reply and "?" not in reply and len(reply.split()) <= 5:
         reply = ""
