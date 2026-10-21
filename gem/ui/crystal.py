@@ -7,7 +7,7 @@ overlay, the tray icon and the dashboard logo.
 import math
 import random
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF, QRadialGradient
 
 from . import theme as T

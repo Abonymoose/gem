@@ -28,7 +28,11 @@ GAMES = {
 NOT_GAMES = {"brave.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "vlc.exe", "explorer.exe",
              "code.exe", "powerpnt.exe", "winword.exe", "excel.exe", "spotify.exe", "discord.exe", "obs64.exe",
              "applicationframehost.exe", "mpc-hc64.exe", "wmplayer.exe", "photos.exe", "gem.exe", "python.exe",
-             "pythonw.exe", "claude.exe", "zoom.exe", "ms-teams.exe", "notion.exe", "steamwebhelper.exe"}
+             "pythonw.exe", "claude.exe", "zoom.exe", "ms-teams.exe", "notion.exe", "steamwebhelper.exe",
+             # Windows' own full-screen surfaces: the lock screen, sign-in, Start, snipping, video players
+             "lockapp.exe", "logonui.exe", "searchhost.exe", "searchapp.exe", "startmenuexperiencehost.exe",
+             "shellexperiencehost.exe", "screenclippinghost.exe", "snippingtool.exe", "textinputhost.exe",
+             "msedgewebview2.exe", "mpv.exe", "potplayermini64.exe", "mpc-be64.exe", "video.ui.exe"}
 DEFAULT_PHRASES = ["let's go", "lets go", "no way", "oh my god", "clip that", "clip it", "what a shot", "insane",
                    "get in", "yes yes yes", "that was crazy", "no shot", "what was that"]
 EXPLICIT = {"clip that", "clip it"}

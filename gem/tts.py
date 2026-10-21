@@ -35,6 +35,29 @@ _CAPTION_WAIT = 1.2           # longest the card waits for the voice
 DEFAULT_PIPER = "en_US-amy-medium"
 
 
+def load_piper(path):
+    """PiperVoice.load without ONNX Runtime's memory-reuse planning, which took about 7 of the 8 seconds a
+    voice needed to load and changes nothing about the sound or speed."""
+    from piper import PiperVoice
+    try:
+        import json
+        from pathlib import Path
+
+        import onnxruntime
+        from piper.config import PiperConfig
+        from piper.voice import ESPEAK_DATA_DIR
+        with open(path + ".json", "r", encoding="utf-8") as f:
+            config = PiperConfig.from_dict(json.load(f))
+        options = onnxruntime.SessionOptions()
+        options.enable_mem_reuse = False
+        session = onnxruntime.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
+        return PiperVoice(config=config, session=session, espeak_data_dir=Path(ESPEAK_DATA_DIR),
+                          download_dir=Path(os.path.dirname(path)))
+    except Exception as e:         # a newer piper that builds voices differently: its own loader still works
+        log.debug("Quick voice load unavailable (%s); using the standard one", e)
+        return PiperVoice.load(path)
+
+
 def clean_for_speech(text):
     text = re.sub(r"https?://\S+", "the link", text)
     text = re.sub(r"[*_`#>|~]+", "", text)
@@ -218,9 +241,8 @@ class Voice:
             try:
                 if not voices.ensure(name):
                     return
-                from piper import PiperVoice
                 t = time.time()
-                v = PiperVoice.load(voices.model_path(name))
+                v = load_piper(voices.model_path(name))
                 for _ in v.synthesize("Ready."):        # the first run is slow; get it out of the way
                     pass
                 self._piper, self._piper_name = v, name

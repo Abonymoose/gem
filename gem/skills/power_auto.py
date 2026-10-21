@@ -9,7 +9,7 @@ import time
 
 from ..actions import ActionError, action
 from ..cards import card
-from ..runtime import caption, say, svc
+from ..runtime import say
 
 log = logging.getLogger("gem.power_auto")
 

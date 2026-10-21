@@ -105,7 +105,7 @@ def clear_conversation():
     return "Conversation cleared."
 
 
-@action("open_dashboard", "Open Gem's window.", "page?: home|reminders|classes|todo|notes|memory|history|settings")
+@action("open_dashboard", "Open Gem's window.", "page?: home|reminders|classes|todo|routines|notes|memory|saved|people|ai|history|settings")
 def open_dashboard(page="home"):
     if svc.overlay:
         svc.overlay.open_dashboard(page or "home")
@@ -135,7 +135,8 @@ def help_text():
             "when your movie ends, skip around in videos, play trivia, play rain or ocean sounds, record voice notes, "
             "make images and wallpapers, switch your speakers, record your screen, check the air quality, point things "
             "out on your screen, spotlight the window you're in, suggest formulas and answers right next to what "
-            "needs filling, and answer questions. "
+            "needs filling, read your screen out loud, tell you what you were doing at any time today, reopen what "
+            "you were working on, learn words I keep mishearing, and answer questions. "
             "Say shut up for a bit when you need quiet.")
 
 
@@ -152,6 +153,21 @@ def voice_volume(level=None, change=None):
     data.setdefault("voice", {})["volume"] = svc.config["voice"]["volume"]
     _write_json(SETTINGS_FILE, data)
     return card("volume", "My voice is at %d now." % new, level=new, header="Gem's voice")
+
+
+@action("ai_status", "Which AI service Gem is using and how much of today's free allowance it has used.", ai=False)
+def ai_status():
+    from ..config import runtime
+    usage = runtime.data.get("ai_usage") or {}
+    today = sum(v for k, v in usage.items() if k != "day") if usage.get("day") == time.strftime("%Y-%m-%d") else 0
+    backups = [b.get("name") for b, _ in svc.brain.backups()]
+    parts = ["I'm answering with %s." % svc.brain.last_service if svc.brain.key or backups else
+             "I don't have an AI key yet, so only the built-in commands work."]
+    if today:
+        parts.append("I've used about %s tokens today." % ("{:,}".format(int(round(today, -2)))))
+    parts.append(("If Groq hits its limit I'll switch to %s." % " then ".join(backups)) if backups else
+                 "There's no backup set up; add a Gemini key in my settings for one.")
+    return " ".join(parts)
 
 
 @action("quit_gem", "Close Gem.")

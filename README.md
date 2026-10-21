@@ -1,4 +1,4 @@
-﻿# Gem â€” Voice Assistant
+# Gem — Voice Assistant
 
 A fast, quiet, genuinely useful voice assistant for Windows. Hold Caps Lock, say what you want, let go.
 Gem runs common commands instantly on your PC and uses Groq's free AI models for everything else.
@@ -22,7 +22,9 @@ Gem lives in a **Dynamic Island**: a small black pill hugging the very top of yo
 - **Audio ducking**: music and videos dip while you hold Caps Lock and while Gem answers, then come back to
   exactly where they were.
 - **The Gem window**: left-click the tray icon, or say "open your settings" / "open dashboard". It has Home
-  (status, quick switches, up next, recent), Reminders, Classes, To-do, Routines, Notes, Memory, History and
+  (status, quick switches, up next, recent), Reminders, Classes, To-do, Routines, Notes, Memory, Saved (your
+  saved screens as a gallery, and voice notes you can play), People (voice lock, and the people Gem knows, with
+  an Ignore switch each), AI & hearing (today's AI use, backup AI keys, words Gem learned), History and
   Settings, so you never have to edit JSON.
 
 In always-listening mode a small violet dot in the pill shows that the mic is live.
@@ -31,7 +33,7 @@ In always-listening mode a small violet dot in the pill shows that the mic is li
 
 Gem speaks with Amy, a neural voice that runs **on your PC** (Piper). It starts within a fraction of a second,
 sounds the same every time and works offline; phrases she says often are cached and play instantly. The voice
-model (about 60 MB) downloads once on first run. Settings â†’ Voice lets you pick another local voice or switch
+model (about 60 MB) downloads once on first run. Settings → Voice lets you pick another local voice or switch
 to the online Microsoft voices, which sound a little richer but can take a few seconds to start.
 
 ## Talking to Gem
@@ -90,23 +92,25 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Timers & alarms | "10 minute timer for pasta", "set an alarm for 6:30 am", "how much time is left", "cancel the timer", "snooze" |
 | Reminders | "remind me to call mom in 15 minutes", "remind me tomorrow at 8 am to submit the essay", "remind me to drink water every hour" |
 | Classes | "what's my schedule today", "when is my next class", "add a class called chemistry on Mondays and Fridays at 4 pm" (a heads-up comes 5 minutes before) |
-| To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note thatâ€¦", "read my notes" |
+| To-do & notes | "add milk, eggs and bread to my list", "what's on my to-do list", "mark math homework as done", "take a note that…", "read my notes" |
 | Focus | "start a focus session", "focus for 50 minutes", "stop the focus session" |
-| Briefing | "good morning" / "brief me" â€” date, weather, today's classes, reminders and to-dos |
+| Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
 | Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish" |
-| Dictation | "start dictation" â€¦ "new line" â€¦ "delete that" â€¦ "stop dictation" |
+| Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
 | Maths & conversions | "what's 15% of 80", "12 times 7", "square root of 144", "convert 5 miles to km", "70 fahrenheit in celsius", "100 dollars to rupees" (instant, live exchange rates) |
 | Stopwatch | "start a stopwatch", "what's the stopwatch at", "stop the stopwatch" (counts up in the island) |
 | Clipboard | "what did I copy", "paste what I copied before", "paste clip 3", "paste the link about the essay" (remembered in memory only; passwords and keys are skipped) |
-| Reading | Select text and say "read this to me"; "copy that" copies Gem's last answer |
+| Reading | Select text and say "read this to me" (with nothing selected, Gem reads the window you're in); "read this page", "read this email", "read my screen"; "keep reading" for the rest of a long page; "copy that" copies Gem's last answer |
 | Habits | "I drank a glass of water", "log 20 pushups", "I had a coffee", "how much water today" (with a weekly chart and streaks) |
 | Time zones | "what time is it in Tokyo", "3 pm EST in IST", "when it's 9 am in London what time is it here", "add Tokyo to my world clock", "world clock" |
 | Countdowns | "how many days until Christmas", "how long until Friday", "my birthday is March 3" → "days until my birthday" |
 | Later | "in 20 minutes pause the music", "open Spotify at 7 pm", "at 6 pm start study mode", "sleep timer 30 minutes" |
 | Screen time | "screen time today", "screen time this week", "how long have I been on Discord today" (tracked on this PC only) |
+| Timeline | "what was I doing at 3", "what was I doing an hour ago", "when did I start Valorant", "how long have I been playing", "when was I last on Discord", "show my timeline", "what did I do this afternoon" / "yesterday". Days run 5 AM to 5 AM, so a late night counts with its evening |
+| Pick up where you left off | "what was I working on", "open what I was working on", "open my last Excel file", "reopen the last PDF" (Windows' recent items, or the files you saved most recently if that's turned off) |
 | Day recap | "what did I do today": a short summary of your requests, finished to-dos, habits and screen time |
 | Extras | "generate a password" (copied to the clipboard, never spoken), "pick between pizza and tacos", "what did I note about the wifi" |
 | Your screen | "what's this error", "explain my screen", "summarize this page", "look at my screen and tell me what to click" (a screenshot goes to the vision model; Gem never clicks anything). "Explain this" with nothing selected also looks at the screen |
@@ -140,7 +144,8 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
-| Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
+| Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do", "which AI are you using" |
+| Mishearings | Gem quietly fixes near-misses when you're clearly talking to her ("spotlite this window", "set a timmer", "Jim, pause"). Teach it words it keeps getting wrong: "when I say free ya, I mean Freya". Right after a mistake: "no, I said open Discord", or "I said Spotify, not spot if I" (learns it and redoes the request). "What words have I taught you", "forget the word fix for free ya" |
 
 To lock the PC say "lock my PC"; to close Gem say "close Gem" or use the tray.
 
@@ -150,8 +155,8 @@ Gem never sends messages by itself: it types into the message box you're in, and
 
 - **Away note**: say "I'm stepping away for 30 minutes" (or "away mode until 6"). In any chat or email, "tell them
   I'm away" types *"Parshv isn't here right now, this is his voice assistant speaking. He'll be back in about 25
-  minutes."* The island shows *Away Â· back 4:30*; "I'm back" ends it. Edit the wording in Settings â†’ You.
-- **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmailâ€¦), click in the reply box and say
+  minutes."* The island shows *Away · back 4:30*; "I'm back" ends it. Edit the wording in Settings → You.
+- **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmail…), click in the reply box and say
   "reply to this". Gem writes a reply that matches how you write in that chat and shows it in the island.
   "Make it shorter", "more casual" or "try again" rewrite it in place. The draft also stays on your clipboard.
 
@@ -177,16 +182,17 @@ No weather key is needed any more (Gem uses Open-Meteo).
 ## Settings and data
 
 Change settings in the Gem window's **Settings** page: voice (with a Test button), look and sound, microphone,
-keys, productivity, AI models, panic, app names, websites and Start with Windows. Items marked â†» apply after
+keys, productivity, AI models, panic, app names, websites and Start with Windows. Items marked ↻ apply after
 **Restart Gem** (same page).
 
-Everything lives in `C:\Users\<you>\.gem\` (tray icon â†’ More â†’ Data folder):
+Everything lives in `C:\Users\<you>\.gem\` (tray icon → More → Data folder):
 
 | File | What |
 |---|---|
 | `settings.json` | All options, including a few not in the window (call-detection ignore list) |
 | `reminders.json` | Timers, alarms, reminders and the weekly class schedule (your old `gem_alarms.json` is imported on first run) |
 | `todo.json`, `routines.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, routines, notes, remembered facts, conversation history |
+| `screens/`, `voice_notes/`, `voiceprint.json`, `hearing.json`, `timeline.json` | Saved screens, voice notes, voiceprints, words you taught Gem, activity timeline |
 | `voices/`, `voice_cache/` | The local voice model and cached phrases |
 | `gem.log` | Log, useful if something doesn't work |
 
@@ -197,21 +203,30 @@ Apps are found automatically from the Start Menu, so app updates (like Discord's
 Gem uses Groq's free tier: `openai/gpt-oss-120b` first, then `qwen/qwen3.8-27b` and `openai/gpt-oss-20b`
 when one is rate-limited, and `whisper-large-v3-turbo` for speech. Change the order under `"ai"` and `"stt"`.
 
+**Backup AI.** When every Groq model is at its limit, Gem can switch to Gemini or OpenRouter (both have free
+keys: [Gemini](https://aistudio.google.com/apikey), [OpenRouter](https://openrouter.ai/keys)). Paste a key in
+the Gem window under **AI & hearing**, or set `GEMINI_API_KEY` / `OPENROUTER_API_KEY` like the Groq key. Gemini
+also covers screen questions. Any OpenAI-compatible service can be added under `"ai"` → `"backups"`. The same
+page shows how much of today's allowance each model has used.
+
 ### Panic hotkey
 
 `Ctrl + Alt + Shift + Tab + P` mutes the PC, closes the games listed in settings, shows the desktop, opens
 Gmail and hides Gem. Hold Caps Lock and say "I'm back", or use the tray, to bring her back. Voice phrases for
-panic can be added under `"panic"` â†’ `"voice_phrases"`.
+panic can be added under `"panic"` → `"voice_phrases"`.
 
 ## Building the EXE
 
 ```bash
 pip install pyinstaller
 build.bat
+install.bat
 ```
 
-The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the voice detector). Turn on
-**Start with Windows** in the tray menu or Settings to launch it at sign-in.
+`build.bat` makes `dist/Gem/` (`Gem.exe` and its `_internal` folder; `hooks/` fixes PyInstaller's packaging of
+the voice detector). It's a folder rather than one big exe because a single-file exe unpacks itself on every
+start. `install.bat` copies it to `%LOCALAPPDATA%\Programs\Gem` and starts it; the installed copy adds itself
+to Start search. Turn on **Start with Windows** in the tray menu or Settings to launch it at sign-in.
 
 ## Privacy
 
@@ -220,3 +235,6 @@ The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the 
 - In always-listening mode, speech is sent to Groq for transcription; short fragments and filler are dropped
   before any AI call.
 - Notes, to-dos, reminders and memory are stored only in `.gem` on your PC.
+- Screen time and the timeline (which app was in front, with its window title) are recorded only while you're
+  active, stay in `.gem` (`usage.json`, `timeline.json`) and the timeline is cleared after two weeks.
+- Your screen only leaves the PC when you ask about it (explain, read, highlight, autofill, remember this).

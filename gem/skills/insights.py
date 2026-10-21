@@ -13,6 +13,7 @@ from ..cards import card
 from ..config import DATA_DIR, JsonStore
 from ..parse import duration_phrase
 from ..runtime import svc
+from . import timeline
 
 log = logging.getLogger("gem.insights")
 
@@ -49,7 +50,12 @@ def _label(hwnd):
         for site in SITES:
             if re.search(r"(?:^|[-|·] )%s(?: |$|[-|·])" % re.escape(site), title):
                 return "Classroom" if site == "Google Classroom" else site
-    return APP_NAMES.get(proc) or proc.replace(".exe", "").title()
+    if proc in APP_NAMES:
+        return APP_NAMES[proc]
+    # "VALORANT-Win64-Shipping.exe" -> "Valorant"
+    base = re.sub(r"(?i)[-_. ]*(?:win64|win32|x64|x86|shipping|dx11|dx12)\b", "", proc[:-4] if proc.endswith(".exe")
+                  else proc)
+    return (base or proc).replace("_", " ").strip().title()
 
 
 def start_tracker(interval=5):
@@ -64,6 +70,7 @@ def start_tracker(interval=5):
                     if name:
                         with _lock:
                             _pending[name] = _pending.get(name, 0) + interval
+                        timeline.sample(name, winapi.window_title(hwnd), time.time(), interval)
                 if time.time() - last_flush > 60:
                     flush()
                     last_flush = time.time()
@@ -74,6 +81,10 @@ def start_tracker(interval=5):
 
 
 def flush():
+    try:
+        timeline.flush()
+    except Exception:
+        log.debug("Timeline save failed", exc_info=True)
     with _lock:
         pending = dict(_pending)
         _pending.clear()

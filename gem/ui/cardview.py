@@ -64,7 +64,6 @@ def _cloud_path(x, y, s):
 def draw_weather_icon(p, x, y, s, code, is_day=True, t=0.0):
     p.save()
     p.setRenderHint(QPainter.Antialiasing)
-    sunny = code in (0, 1)
     cloudy = code in (2, 3, 45, 48) or code >= 51
     if code in (0, 1, 2):
         cx, cy = (x + s * 0.5, y + s * 0.45) if code != 2 else (x + s * 0.36, y + s * 0.34)

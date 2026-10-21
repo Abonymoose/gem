@@ -97,11 +97,14 @@ def clipboard_clear():
     return "Clipboard history cleared."
 
 
-@action("read_aloud", "Read the selected text (or the clipboard) out loud.")
+@action("read_aloud", "Read the selected text out loud (or what was just copied, or else the text on screen).")
 def read_aloud():
-    text = (winapi.copy_selection() or winapi.get_clipboard() or "").strip()
+    text = (winapi.copy_selection() or "").strip()
+    if not text and _history and time.time() - _history[-1][0] < 120:
+        text = _history[-1][1].strip()              # copied a moment ago
     if not text:
-        raise ActionError("Select some text first.")
+        from .extras import read_screen
+        return read_screen()
     text = re.sub(r"\s+", " ", text)[:3000]
     return card("reading", text, note=text[:220] + ("…" if len(text) > 220 else ""))
 

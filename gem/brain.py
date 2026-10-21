@@ -3,6 +3,8 @@
 One request per utterance: the model returns JSON saying whether the speech
 was meant for Gem, which actions to run and what to say. Models are tried in
 order and skipped while rate limited, so the free tier stretches further.
+When every Groq model is limited, a backup service (Gemini, OpenRouter) takes
+over if you've given Gem a key for it.
 """
 import collections
 import datetime
@@ -23,6 +25,39 @@ CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 class BrainUnavailable(Exception):
     pass
+
+
+def secret(name):
+    """An API key from the environment, or from your saved user variables (so a key set while Gem runs works
+    without a restart)."""
+    if not name:
+        return ""
+    value = os.environ.get(name, "")
+    if value:
+        return value
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            return str(winreg.QueryValueEx(k, name)[0] or "")
+    except OSError:
+        return ""
+
+
+def save_secret(name, value):
+    """Save a key as a user environment variable (what setx does) and use it right away."""
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as k:
+        if value:
+            winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
+        else:
+            try:
+                winreg.DeleteValue(k, name)
+            except OSError:
+                pass
+    if value:
+        os.environ[name] = value
+    else:
+        os.environ.pop(name, None)
 
 
 SYSTEM_PROMPT = """You are Gem, the voice assistant on {name}'s Windows PC. Turn speech into actions and short spoken replies.
@@ -74,7 +109,8 @@ def _clean_plan(raw, source):
         reply = ""
     # A web answer speaks for itself; the model's own guess would be stale. The planner can't see the screen,
     # so anything it says about it would be made up: the screen actions answer for themselves.
-    if any(a["name"] in ("web_answer", "explain_screen", "copy_screen_text", "screen_save", "screen_find")
+    if any(a["name"] in ("web_answer", "explain_screen", "copy_screen_text", "screen_save", "screen_find",
+                         "read_screen", "read_aloud", "timeline_at", "timeline_app", "timeline_day", "recent_files")
            for a in acts):
         reply = ""
     return {
@@ -96,13 +132,20 @@ class Brain:
         self._cooldown = {}
         self._limits = {}               # model -> (tokens left this minute, minute allowance, refill time)
         self.speaker = None             # set when a known person other than the user is talking
+        self.last_service = "Groq"      # who answered last, for the dashboard
+        self._plain = set()             # backup models that refused extra options
 
     @property
     def key(self):
         return os.environ.get("GROQ_API_KEY", "")
 
+    def backups(self):
+        """Backup services that have a key: [(service settings, key)]."""
+        return [(b, secret(b.get("key_env"))) for b in self.cfg.get("backups") or []
+                if b.get("url") and secret(b.get("key_env"))]
+
     def available(self):
-        return bool(self.key)
+        return bool(self.key or self.backups())
 
     # ── Transport ────────────────────────────────────────────────────────────
 
@@ -154,46 +197,78 @@ class Brain:
             return 0
         return limit if time.time() >= refill_at else left
 
-    def _post(self, messages, json_mode=False, max_tokens=500, temperature=0.3, models=None):
-        if not self.key:
+    def _routes(self, models, vision):
+        """Everything to try, in order: (service, url, key, model, extra body fields)."""
+        routes = [("Groq", CHAT_URL, self.key, m, None) for m in models or self.cfg.get("models", [])] \
+            if self.key else []
+        for b, key in self.backups():
+            for m in (b.get("vision_models") if vision else b.get("models")) or []:
+                routes.append((b.get("name") or "Backup", b["url"], key, m, b.get("extra") or {}))
+        return routes
+
+    def _post(self, messages, json_mode=False, max_tokens=500, temperature=0.3, models=None, vision=False):
+        if not self.available():
             raise BrainUnavailable("Set the GROQ_API_KEY environment variable so I can answer that.")
         last_error = "no model available"
-        for model in models or self.cfg.get("models", []):
-            if self._cooldown.get(model, 0) > time.time():
+        for service, url, key, model, extra in self._routes(models, vision):
+            groq = extra is None
+            slot = model if groq else "%s:%s" % (service, model)
+            if self._cooldown.get(slot, 0) > time.time():
                 continue
+            if groq:
+                body = self._body(model, messages, json_mode, max_tokens, temperature)
+            else:
+                body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+                if slot not in self._plain:
+                    body.update(extra)
+                    if json_mode:
+                        body["response_format"] = {"type": "json_object"}
             try:
-                r = self.session.post(CHAT_URL, headers={"Authorization": "Bearer " + self.key},
-                                      json=self._body(model, messages, json_mode, max_tokens, temperature),
-                                      timeout=15)
+                r = self.session.post(url, headers={"Authorization": "Bearer " + key}, json=body, timeout=20)
+                if r.status_code == 400 and not groq and slot not in self._plain and (extra or json_mode):
+                    # Services differ in which options they accept; from now on send that model just the basics.
+                    log.info("%s %s refused the options (%s); retrying plainly", service, model, r.text[:120])
+                    self._plain.add(slot)
+                    for k in list(extra) + ["response_format"]:
+                        body.pop(k, None)
+                    r = self.session.post(url, headers={"Authorization": "Bearer " + key}, json=body, timeout=20)
             except requests.RequestException as e:
                 last_error = "network: %s" % e
-                log.warning("Groq %s request failed: %s", model, e)
-                if isinstance(e, (requests.ConnectionError,)):
+                log.warning("%s %s request failed: %s", service, model, e)
+                if isinstance(e, (requests.ConnectionError,)) and groq:
                     break
                 continue
-            self._note_limits(model, r.headers)
+            if groq:
+                self._note_limits(model, r.headers)
             if r.status_code == 429:
-                wait = float(r.headers.get("retry-after") or 20)
-                self._cooldown[model] = time.time() + wait
-                log.warning("Groq %s rate limited for %.0fs", model, wait)
+                wait = float(r.headers.get("retry-after") or (20 if groq else 60))
+                self._cooldown[slot] = time.time() + wait
+                log.warning("%s %s rate limited for %.0fs", service, model, wait)
                 last_error = "rate limited"
                 continue
             if r.status_code >= 400:
                 last_error = "%s %s" % (r.status_code, r.text[:200])
-                log.warning("Groq %s error: %s", model, last_error)
+                log.warning("%s %s error: %s", service, model, last_error)
                 if r.status_code in (401, 403):
-                    raise BrainUnavailable("My Groq API key was rejected. Check GROQ_API_KEY.")
+                    if groq:
+                        raise BrainUnavailable("My Groq API key was rejected. Check GROQ_API_KEY.")
+                    self._cooldown[slot] = time.time() + 600        # a bad backup key shouldn't slow every request
+                elif r.status_code == 404 and not groq:
+                    self._cooldown[slot] = time.time() + 3600       # that model name isn't offered there
                 continue
             try:
-                body = r.json()
-                content = body["choices"][0]["message"].get("content") or ""
+                data = r.json()
+                content = data["choices"][0]["message"].get("content") or ""
             except Exception:
                 continue
-            self._count(model, (body.get("usage") or {}).get("total_tokens") or 0)
+            self._count(slot, (data.get("usage") or {}).get("total_tokens") or 0)
             if json_mode and _parse_json(content) is None:
-                log.warning("Groq %s returned invalid JSON: %r", model, content[:200])
+                log.warning("%s %s returned invalid JSON: %r", service, model, content[:200])
                 continue
-            return content, model
+            if service != self.last_service:
+                log.info("Answering with %s (%s)", service, model)
+                self.last_service = service
+            return content, slot
         if "network" in last_error:
             raise BrainUnavailable("I'm offline right now, so I can only do the basics: timers, alarms, volume, "
                                    "music and apps.")
@@ -274,5 +349,5 @@ class Brain:
                     {"role": "user", "content": [{"type": "text", "text": question}] +
                      [{"type": "image_url", "image_url": {"url": u}} for u in urls]}]
         content, _ = self._post(messages, max_tokens=max_tokens, temperature=0.2,
-                                models=self.cfg.get("vision_models") or ["qwen/qwen3.8-27b"])
+                                models=self.cfg.get("vision_models") or ["qwen/qwen3.8-27b"], vision=True)
         return content.strip()

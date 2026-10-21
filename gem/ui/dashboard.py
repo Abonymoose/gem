@@ -9,11 +9,12 @@ import os
 import time
 
 from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QTime, QTimer, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QButtonGroup, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-                               QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSlider, QSpinBox, QStackedWidget,
-                               QTableWidget, QTableWidgetItem, QTextBrowser, QTimeEdit, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSlider, QSpinBox,
+                               QStackedWidget, QTableWidget, QTableWidgetItem, QTextBrowser, QTimeEdit, QVBoxLayout,
+                               QWidget)
 
 from .. import actions
 from ..config import DATA_DIR, NOTES_FILE, SETTINGS_FILE, _write_json
@@ -50,6 +51,8 @@ QPushButton#Primary { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0
 QPushButton#Primary:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #9a70f8, stop:1 #b08ed6); }
 QPushButton#Danger { background: transparent; border: 1px solid #4a2740; color: #f0a0c0; padding: 4px 10px; }
 QPushButton#Danger:hover { background: #2a1424; }
+QPushButton#Small { padding: 4px 12px; }
+QPushButton#Danger, QPushButton#Small { min-height: 18px; }
 QPushButton#Seg { border-radius: 9px; padding: 8px 16px; background: #1a1330; }
 QPushButton#Seg:checked { background: #3b2a5c; border-color: #6b4fa0; color: white; font-weight: 600; }
 QPushButton#Chip { border-radius: 14px; padding: 5px 12px; background: #1a1330; }
@@ -82,6 +85,13 @@ QSlider::groove:horizontal { height: 4px; background: #2f2350; border-radius: 2p
 QSlider::sub-page:horizontal { background: #8b5cf6; border-radius: 2px; }
 QSlider::handle:horizontal { background: white; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
 QToolTip { background: #1a1330; color: #ece3fb; border: 1px solid #2f2350; }
+QListWidget#Gallery { background: transparent; border: none; }
+QListWidget#Gallery::item { border: 1px solid transparent; border-radius: 10px; padding: 6px; color: #b9a8d9; }
+QListWidget#Gallery::item:selected { background: #241a3c; border-color: #6b4fa0; color: #ffffff; }
+QListWidget#Gallery::item:hover { background: #1c1530; }
+QProgressBar { background: #221a36; border: none; border-radius: 4px; }
+QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8b5cf6, stop:1 #c4a0f0);
+                      border-radius: 4px; }
 """
 
 
@@ -247,9 +257,9 @@ def cell_button(text, cb):
     """A compact button centred in a table cell."""
     holder = QWidget()
     lay = QHBoxLayout(holder)
-    lay.setContentsMargins(6, 6, 10, 6)
+    lay.setContentsMargins(4, 0, 10, 0)            # the table already pads cells by 6px
     lay.addStretch()
-    lay.addWidget(button(text, "Danger", cb))
+    lay.addWidget(button(text, "Danger", cb), 0, Qt.AlignVCenter)
     return holder
 
 
@@ -867,6 +877,415 @@ class HistoryPage(Page):
         self.view.setHtml("".join(parts))
 
 
+def cell_widget(widget):
+    """Any widget centred in a table cell."""
+    holder = QWidget()
+    lay = QHBoxLayout(holder)
+    lay.setContentsMargins(2, 0, 2, 0)             # the table already pads cells by 6px
+    lay.addWidget(widget, 0, Qt.AlignVCenter)
+    lay.addStretch()
+    return holder
+
+
+def _first_upper(text):
+    return text[:1].upper() + text[1:]
+
+
+def _ask_gem(text):
+    """Hand a request to Gem as if typed, so it runs the full spoken flow."""
+    if svc.assistant:
+        svc.assistant.submit_text(text)
+
+
+class PeoplePage(Page):
+    title = "People & voices"
+
+    def __init__(self):
+        super().__init__()
+        self.root.addWidget(label("Gem can learn your voice, so in always-listening it only answers you, and the "
+                                  "voices of people around you, to greet them by name or ignore them.", "Muted",
+                                  wrap=True))
+        f, lay = card_frame()
+        lay.addWidget(label("YOUR VOICE", "Section"))
+        row = QHBoxLayout()
+        self.me = label("", wrap=True)
+        row.addWidget(self.me, 1)
+        row.addWidget(label("Voice lock"))
+        self.lock = Toggle()
+        self.lock.clicked.connect(self._lock)
+        row.addWidget(self.lock)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(button("Learn my voice", "Primary", lambda: self._ask("learn my voice")))
+        row.addWidget(button("Forget my voice", "Danger", lambda: self._ask("forget my voice")))
+        row.addStretch()
+        lay.addLayout(row)
+        self.root.addWidget(f)
+
+        f, lay = card_frame()
+        lay.addWidget(label("PEOPLE", "Section"))
+        lay.addWidget(label("Right after someone talks, say “that was my sister Freya”, or say “learn Freya's "
+                            "voice” and have them read five short lines.", "Faint", wrap=True))
+        self.table = table(["Name", "Relation", "Voice", "Ignore", ""], stretch=0)
+        lay.addWidget(self.table, 1)
+        self.root.addWidget(f, 1)
+        self.feedback = label("", "Faint")
+        self.root.addWidget(self.feedback)
+
+    def _ask(self, text):
+        _ask_gem(text)
+        self.feedback.setText("Gem will walk you through it. Hold Caps Lock to answer.")
+
+    def _lock(self, on):
+        from .. import voiceprint
+        if on and not voiceprint.ready():
+            self.lock.setChecked(False)
+            self._ask("learn my voice")
+            return
+        voiceprint.set_locked(on)
+        self.refresh()
+
+    def _block(self, key, on):
+        from .. import voiceprint
+        voiceprint.set_blocked(key, on)
+        self.refresh()
+
+    def _forget(self, key):
+        from .. import voiceprint
+        voiceprint.forget_person(key)
+        self.refresh()
+
+    def refresh(self):
+        from .. import voiceprint
+        n = voiceprint.sample_count()
+        if voiceprint.ready():
+            self.me.setText("Gem knows your voice from %d samples%s." % (
+                n, " and keeps learning it when you hold Caps Lock" if
+                (svc.config.get("voice_lock") or {}).get("learn_from_push_to_talk", True) else ""))
+        else:
+            self.me.setText("Gem doesn't know your voice yet. Learning it takes about 30 seconds.")
+        self.lock.setChecked(voiceprint.locked())
+        people = sorted(voiceprint.people().items(), key=lambda kv: (kv[1].get("name") or kv[0]).lower())
+        self.table.setRowCount(0)
+        self.table.setRowCount(max(1, len(people)))
+        if not people:
+            self.table.setItem(0, 0, QTableWidgetItem("Nobody yet"))
+            return
+        for r, (key, p) in enumerate(people):
+            self.table.setItem(r, 0, QTableWidgetItem(p.get("name") or key.title()))
+            self.table.setItem(r, 1, QTableWidgetItem((p.get("relation") or "").capitalize()))
+            learned = len(p.get("samples") or [])
+            self.table.setItem(r, 2, QTableWidgetItem("%d samples" % learned if learned else "Not learned yet"))
+            t = Toggle(bool(p.get("blocked")))
+            t.clicked.connect(lambda on, k=key: self._block(k, on))
+            self.table.setCellWidget(r, 3, cell_widget(t))
+            self.table.setCellWidget(r, 4, cell_button("Forget", lambda _=False, k=key: self._forget(k)))
+
+
+class SavedPage(Page):
+    """Screens you asked Gem to remember, and voice notes."""
+    title = "Saved"
+    THUMBS = 48
+
+    def __init__(self):
+        super().__init__()
+        self._icons = {}
+        f, lay = card_frame()
+        head = QHBoxLayout()
+        head.addWidget(label("SCREENS", "Section"))
+        head.addStretch()
+        head.addWidget(label("Say “remember this” to save one, or “find the screen with…”", "Faint"))
+        lay.addLayout(head)
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        self.gallery = QListWidget()
+        self.gallery.setObjectName("Gallery")
+        self.gallery.setViewMode(QListWidget.IconMode)
+        self.gallery.setIconSize(QSize(176, 99))
+        self.gallery.setGridSize(QSize(196, 140))
+        self.gallery.setResizeMode(QListWidget.Adjust)
+        self.gallery.setMovement(QListWidget.Static)
+        self.gallery.setWordWrap(True)
+        self.gallery.currentRowChanged.connect(self._show)
+        self.gallery.itemDoubleClicked.connect(lambda item: self._open())
+        body.addWidget(self.gallery, 3)
+        side = QVBoxLayout()
+        self.s_title = label("", "H2", wrap=True)
+        self.s_when = label("", "Faint")
+        self.s_text = label("", "Muted", wrap=True)
+        self.s_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        for w in (self.s_title, self.s_when, self.s_text):
+            side.addWidget(w)
+        side.addStretch()
+        row = QHBoxLayout()
+        row.addWidget(button("Open", cb=self._open))
+        row.addWidget(button("Delete", "Danger", self._delete_screen))
+        side.addLayout(row)
+        self.side = QWidget()
+        self.side.setLayout(side)
+        self.side.setFixedWidth(250)
+        body.addWidget(self.side)
+        self.empty = label("Nothing saved yet. When something's worth keeping, a recipe, an order number, a "
+                           "slide, say “remember this”. Gem keeps a copy with a short description, so later you "
+                           "can just ask for “the screen with the train times”.", "Muted", wrap=True)
+        self.empty.setAlignment(Qt.AlignCenter)
+        self.empty.setContentsMargins(60, 0, 60, 0)
+        body.addWidget(self.empty, 1)
+        lay.addLayout(body, 1)
+        self.root.addWidget(f, 3)
+
+        f, lay = card_frame()
+        head = QHBoxLayout()
+        head.addWidget(label("VOICE NOTES", "Section"))
+        head.addStretch()
+        head.addWidget(label("Say “record a voice note”", "Faint"))
+        lay.addLayout(head)
+        self.notes = table(["When", "Length", "What you said", "", ""], stretch=2)
+        self.notes.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+        self.notes.setColumnWidth(3, 84)
+        lay.addWidget(self.notes, 1)
+        self.root.addWidget(f, 2)
+        self._screens = []
+
+    def _thumb(self, path):
+        if path not in self._icons:
+            pm = QPixmap(path)
+            self._icons[path] = QIcon(pm.scaled(352, 198, Qt.KeepAspectRatio, Qt.SmoothTransformation)) \
+                if not pm.isNull() else QIcon()
+        return self._icons[path]
+
+    def _current(self):
+        row = self.gallery.currentRow()
+        return self._screens[row] if 0 <= row < len(self._screens) else None
+
+    def _show(self, row):
+        it = self._screens[row] if 0 <= row < len(self._screens) else None
+        from ..skills.screen_memory import _when as when
+        self.s_title.setText(it["title"] if it else "Nothing saved yet")
+        self.s_when.setText(_first_upper(when(it["t"])) if it else "")
+        self.s_text.setText(" ".join(x for x in ((it or {}).get("note"), (it or {}).get("summary"),
+                                                  (it or {}).get("details")) if x))
+
+    def _open(self):
+        it = self._current()
+        if it and os.path.exists(it["path"]):
+            os.startfile(it["path"])
+
+    def _delete_screen(self):
+        it = self._current()
+        if not it:
+            return
+        from ..skills.screen_memory import index
+        with index as data:
+            data["items"] = [x for x in data.get("items", []) if x.get("id") != it.get("id")]
+        try:
+            os.remove(it["path"])
+        except OSError:
+            pass
+        self.refresh()
+
+    def _play(self, path):
+        import threading
+        from ..skills import voice_notes
+        threading.Thread(target=voice_notes._play, args=(path,), name="note-play", daemon=True).start()
+
+    def _delete_note(self, path):
+        from ..skills.voice_notes import index
+        with index as data:
+            data["items"] = [x for x in data.get("items", []) if x.get("path") != path]
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        self.refresh()
+
+    def refresh(self):
+        from ..skills import screen_memory, voice_notes
+        keep = self._current()
+        self._screens = [it for it in (screen_memory.index.data.get("items") or [])
+                         if os.path.exists(it["path"])][-self.THUMBS:][::-1]
+        self.gallery.blockSignals(True)
+        self.gallery.clear()
+        for it in self._screens:
+            item = QListWidgetItem(self._thumb(it["path"]), it["title"] if len(it["title"]) < 40
+                                   else it["title"][:38] + "…")
+            item.setToolTip(it.get("summary") or it["title"])
+            self.gallery.addItem(item)
+        self.gallery.blockSignals(False)
+        ids = [it.get("id") for it in self._screens]
+        row = ids.index(keep.get("id")) if keep and keep.get("id") in ids else 0
+        for w in (self.gallery, self.side):
+            w.setVisible(bool(self._screens))
+        self.empty.setVisible(not self._screens)
+        if self._screens:
+            self.gallery.setCurrentRow(row)
+            self._show(row)
+
+        notes = voice_notes._items()[-50:][::-1]
+        self.notes.setRowCount(0)
+        self.notes.setRowCount(max(1, len(notes)))
+        if not notes:
+            self.notes.setItem(0, 2, QTableWidgetItem("No voice notes yet."))
+        for r, n in enumerate(notes):
+            self.notes.setItem(r, 0, QTableWidgetItem(_first_upper(voice_notes._when(n["t"]))))
+            self.notes.setItem(r, 1, QTableWidgetItem("%d s" % round(n.get("seconds") or 0)))
+            self.notes.setItem(r, 2, QTableWidgetItem(n.get("text") or "(no words)"))
+            self.notes.setCellWidget(r, 3, cell_widget(button("Play", "Small", lambda _=False, p=n["path"]:
+                                                              self._play(p))))
+            self.notes.setCellWidget(r, 4, cell_button("Delete", lambda _=False, p=n["path"]: self._delete_note(p)))
+
+
+class AIPage(Page):
+    """Which AI is answering, today's usage, backup services and words Gem was taught to hear."""
+    title = "AI & hearing"
+
+    def __init__(self):
+        super().__init__()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("Root")
+        col = QVBoxLayout(body)
+        col.setContentsMargins(0, 0, 12, 0)
+        col.setSpacing(16)
+        scroll.setWidget(body)
+        self.root.addWidget(scroll, 1)
+
+        f, lay = card_frame()
+        lay.addWidget(label("TODAY", "Section"))
+        self.service = label("", wrap=True)
+        lay.addWidget(self.service)
+        self.usage = QVBoxLayout()
+        self.usage.setSpacing(6)
+        lay.addLayout(self.usage)
+        lay.addWidget(label("Groq's free tier allows a set number of tokens per minute and per day for each model. "
+                            "Built-in commands like timers, volume and music don't use any.", "Faint", wrap=True))
+        col.addWidget(f)
+
+        f, lay = card_frame()
+        lay.addWidget(label("BACKUP AI", "Section"))
+        lay.addWidget(label("When every Groq model is at its limit, Gem asks one of these instead. Keys are saved in "
+                            "your Windows user variables, like the Groq key, and never leave this PC except to the "
+                            "service they belong to.", "Faint", wrap=True))
+        self.keys = {}
+        for b in svc.config["ai"].get("backups") or []:
+            env = b.get("key_env")
+            if not env:
+                continue
+            row = QHBoxLayout()
+            row.addWidget(label(b.get("name") or env), 1)
+            status = label("", "Faint")
+            row.addWidget(status)
+            e = QLineEdit()
+            e.setEchoMode(QLineEdit.Password)
+            e.setPlaceholderText("Paste a key")
+            e.setFixedWidth(300)
+            row.addWidget(e)
+            row.addWidget(button("Save", cb=lambda _=False, n=env: self._save_key(n)))
+            lay.addLayout(row)
+            self.keys[env] = (e, status)
+        links = QLabel("Free keys: <a style='color:#c4a0f0' href='https://aistudio.google.com/apikey'>Gemini</a> "
+                       "&nbsp;·&nbsp; <a style='color:#c4a0f0' href='https://openrouter.ai/keys'>OpenRouter</a>")
+        links.setObjectName("Faint")
+        links.setOpenExternalLinks(True)
+        lay.addWidget(links)
+        col.addWidget(f)
+
+        f, lay = card_frame()
+        lay.addWidget(label("WORDS GEM LEARNED", "Section"))
+        lay.addWidget(label("Words Gem keeps mishearing, and what you mean. You can also say “when I say free ya, I "
+                            "mean Freya”, or “I said Spotify, not spot if I” right after a mistake.", "Faint",
+                            wrap=True))
+        row = QHBoxLayout()
+        self.heard = QLineEdit(placeholderText="When Gem hears…")
+        self.meant = QLineEdit(placeholderText="…it means")
+        self.meant.returnPressed.connect(self._teach)
+        row.addWidget(self.heard, 1)
+        row.addWidget(self.meant, 1)
+        row.addWidget(button("Add", "Primary", self._teach))
+        lay.addLayout(row)
+        self.fixes = table(["Gem hears", "It means", ""], stretch=1)
+        self.fixes.setMinimumHeight(200)
+        lay.addWidget(self.fixes)
+        col.addWidget(f)
+        col.addStretch()
+
+    def _save_key(self, env):
+        from ..brain import save_secret
+        e, status = self.keys[env]
+        value = e.text().strip()
+        try:
+            save_secret(env, value)
+            e.clear()
+            status.setText("Saved" if value else "Removed")
+        except OSError as err:
+            status.setText("Couldn't save: %s" % err)
+        self.refresh()
+
+    def _teach(self):
+        from ..skills import hearing
+        if self.heard.text().strip() and self.meant.text().strip():
+            hearing.hearing_teach(self.heard.text(), self.meant.text())
+            self.heard.clear()
+            self.meant.clear()
+            self.heard.setFocus()
+            self.refresh()
+
+    def _unteach(self, heard):
+        from ..skills import hearing
+        hearing.hearing_forget(heard)
+        self.refresh()
+
+    def refresh(self):
+        from ..brain import secret
+        from ..config import runtime
+        brain = svc.brain
+        backups = [b.get("name") for b, _ in brain.backups()] if brain else []
+        if not brain or not (brain.key or backups):
+            self.service.setText("No AI key yet. Set GROQ_API_KEY to turn on answers, summaries and screen help.")
+        else:
+            self.service.setText("Answering with <b>%s</b>. %s" % (
+                brain.last_service, ("Backup: %s." % ", ".join(backups)) if backups else "No backup set up."))
+        HomePage._clear(self.usage)
+        usage = runtime.data.get("ai_usage") or {}
+        rows = sorted(((k, v) for k, v in usage.items() if k != "day"), key=lambda kv: -kv[1]) \
+            if usage.get("day") == datetime.date.today().isoformat() else []
+        top = max([v for _, v in rows] or [1])
+        for model, used in rows[:8]:
+            r = QHBoxLayout()
+            name = label(model.split("/")[-1].replace(":", " · "))
+            name.setFixedWidth(230)
+            r.addWidget(name)
+            bar = QProgressBar()
+            bar.setRange(0, top)
+            bar.setValue(int(used))
+            bar.setTextVisible(False)
+            bar.setFixedHeight(8)
+            r.addWidget(bar, 1)
+            n = label("{:,}".format(int(used)), "Faint")
+            n.setFixedWidth(80)
+            n.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            r.addWidget(n)
+            self.usage.addLayout(r)
+        if not rows:
+            self.usage.addWidget(label("No AI used yet today.", "Muted"))
+        for env, (e, status) in self.keys.items():
+            if not status.text().startswith("Couldn't"):
+                status.setText("Ready" if secret(env) else "No key")
+
+        from ..skills import hearing
+        fixes = sorted((hearing.store.data.get("fixes") or {}).items())
+        self.fixes.setRowCount(0)
+        self.fixes.setRowCount(max(1, len(fixes)))
+        if not fixes:
+            self.fixes.setItem(0, 0, QTableWidgetItem("Nothing yet"))
+        for r, (heard, meant) in enumerate(fixes):
+            self.fixes.setItem(r, 0, QTableWidgetItem(heard))
+            self.fixes.setItem(r, 1, QTableWidgetItem(meant))
+            self.fixes.setCellWidget(r, 2, cell_button("Remove", lambda _=False, h=heard: self._unteach(h)))
+
+
 # ── Settings ─────────────────────────────────────────────────────────────────
 
 VOICES = [("Ava (US, natural)", "en-US-AvaMultilingualNeural"), ("Emma (US)", "en-US-EmmaMultilingualNeural"),
@@ -909,10 +1328,18 @@ FIELDS = [
     ("Listening", "Keep learning my voice from push-to-talk", "voice_lock.learn_from_push_to_talk", "bool", None, False),
     ("Listening", "Voice lock while holding Caps Lock too", "voice_lock.in_push_to_talk", "bool", None, False),
     ("Listening", "Auto-clip hype moments in games", "auto_clip.enabled", "bool", None, False),
+    ("Listening", "Remember things I mention without being asked", "auto_memory", "bool", None, False),
+    ("Heads-ups", "Rain on the way (needs your home city)", "heads_up.rain", "bool", None, False),
+    ("Heads-ups", "A download finished", "heads_up.downloads", "bool", None, False),
+    ("Heads-ups", "The PC is struggling or the battery is low", "heads_up.pc", "bool", None, False),
+    ("Heads-ups", "Birthdays and dates you told Gem", "heads_up.dates", "bool", None, False),
+    ("Heads-ups", "Poor air quality outside", "heads_up.air", "bool", None, False),
     ("Keys", "Hold time before Caps Lock counts as held (ms)", "keys.hold_ms", "int", (120, 600), True),
     ("Keys", "Triple-tap window (ms)", "keys.triple_tap_ms", "int", (400, 1500), True),
     ("Keys", "Command bar hotkey", "keys.command_bar", "text", None, True),
     ("Keys", "Panic hotkey", "keys.panic", "text", None, True),
+    ("Keys", "Discord Toggle Mute keybind", "discord.mute_keys", "text", None, False),
+    ("Keys", "Discord Toggle Deafen keybind", "discord.deafen_keys", "text", None, False),
     ("Productivity", "Break reminder every (minutes, 0 = off)", "reminders.break_minutes", "int", (0, 240), False),
     ("Productivity", "Break reminder message", "reminders.break_message", "text", None, False),
     ("Productivity", "Focus session length (minutes)", "focus.work_minutes", "int", (5, 180), False),
@@ -1182,8 +1609,8 @@ class SettingsPage(Page):
 class Dashboard(QMainWindow):
     PAGES = [("home", "Home", HomePage), ("reminders", "Reminders", RemindersPage), ("classes", "Classes", ClassesPage),
              ("todo", "To-do", TodoPage), ("routines", "Routines", RoutinesPage), ("notes", "Notes", NotesPage),
-             ("memory", "Memory", MemoryPage),
-             ("history", "History", HistoryPage), ("settings", "Settings", SettingsPage)]
+             ("memory", "Memory", MemoryPage), ("saved", "Saved", SavedPage), ("people", "People", PeoplePage),
+             ("ai", "AI & hearing", AIPage), ("history", "History", HistoryPage), ("settings", "Settings", SettingsPage)]
 
     def __init__(self, overlay):
         super().__init__()
@@ -1215,7 +1642,7 @@ class Dashboard(QMainWindow):
         self.nav = QButtonGroup(self)
         self.pages = {}
         for key, name, cls in self.PAGES:
-            b = button(name, "Nav")
+            b = button(name.replace("&", "&&"), "Nav")         # a lone & would turn into a keyboard shortcut
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, k=key: self.open_page(k, focus=False))
             self.nav.addButton(b)

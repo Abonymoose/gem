@@ -15,7 +15,7 @@ from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import power_auto, routines, text as text_skill, trivia, voice_id
+from .skills import hearing, power_auto, routines, text as text_skill, trivia, voice_id
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -49,6 +49,7 @@ class Assistant:
     def __init__(self, on_quit):
         self.on_quit = on_quit
         self.last_heard = deque(maxlen=20)
+        self.last_heard_at = 0.0
         self._queue = queue.Queue()
         self._pending = None            # (callback, expires_at)
 
@@ -158,7 +159,9 @@ class Assistant:
                 caption("I didn't catch that.", seconds=2.5)
             return
 
+        text = hearing.apply(text)                  # words you taught Gem it keeps mishearing
         self.last_heard.append(text)
+        self.last_heard_at = time.time()
         norm, by_name = router.normalize(text)
         plain = re.sub(r"[^a-z' ]", "", norm).strip()
         log.info("Heard [%s]: %s", item.source, text)
@@ -210,6 +213,8 @@ class Assistant:
 
         # Fast path
         m = router.match(norm, text) if norm else None
+        if not m and norm and addressed:
+            m, _ = router.repair(norm, text)          # a misheard word or name, when clearly talking to Gem
         if m and (addressed or (m.safe and len(norm.split()) >= 2)):
             if not addressed:
                 caption(None, you=text)

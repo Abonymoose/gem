@@ -7,7 +7,6 @@ import os
 import random
 
 from .actions import action
-from .cards import card
 from .config import DATA_DIR, runtime
 from .runtime import say, svc
 

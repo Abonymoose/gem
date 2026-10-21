@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 import time
-import urllib.parse
 
 import requests
 
@@ -16,7 +15,7 @@ from ..brain import BrainUnavailable
 from ..cards import card
 from ..config import DATA_DIR
 from ..runtime import svc
-from ..winapi import copy_selection, get_clipboard, set_clipboard
+from ..winapi import copy_selection, foreground_window, get_clipboard, set_clipboard
 
 log = logging.getLogger("gem.extras")
 
@@ -167,6 +166,73 @@ def copy_screen_text(what=""):
     set_clipboard(text)
     words = len(text.split())
     return "Copied %d word%s from your screen." % (words, "" if words == 1 else "s")
+
+
+# ── Reading the screen out loud ──────────────────────────────────────────────
+
+READ_ASK = ("Transcribe the main readable content in the active window, in reading order, so it can be read aloud: "
+            "the article, document, message thread, email or question the user is looking at. Leave out menus, "
+            "toolbars, tabs, buttons, ads, URLs, timestamps and other page furniture. Copy the words exactly; don't "
+            "summarize, explain or add anything. Plain text only, one paragraph per line. If there's no real text, "
+            "reply NONE.")
+READ_TILES = (" There are {n} pictures of the same window from left to right, overlapping in the middle: text that "
+              "appears in two pictures is the same text, so include it once.")
+READ_CHUNK = 2200
+_reading = {"rest": "", "t": 0.0}
+
+
+def _say_chunk(text):
+    """Read up to about two minutes; keep the rest for "keep reading"."""
+    if len(text) <= READ_CHUNK:
+        _reading.update(rest="", t=time.time())
+        return card("reading", text, note=text[:220] + ("…" if len(text) > 220 else ""))
+    cut = max(text.rfind("\n", 0, READ_CHUNK), text.rfind(". ", 0, READ_CHUNK) + 1)
+    cut = cut if cut > READ_CHUNK // 2 else READ_CHUNK
+    _reading.update(rest=text[cut:].strip(), t=time.time())
+    part = text[:cut].strip()
+    return card("reading", part + " … Say keep reading for the rest.", note=part[:220] + "…")
+
+
+@action("read_screen", "Read the text in the active window out loud (an article, document, email, messages...).",
+        "what?: str")
+def read_screen(what=""):
+    from ..winapi import window_rect_physical
+    from .screen import TILES_COST, _pieces, data_url, grab
+    svc.state.update(thinking=True)
+    img, title, box = grab(with_box=True, full=True)
+    hwnd = foreground_window()
+    if hwnd and box:
+        # Just the window you're reading, not the whole monitor.
+        wl, wt_, wr, wb = window_rect_physical(hwnd)
+        crop = (max(0, wl - box[0]), max(0, wt_ - box[1]), min(img.width, wr - box[0]), min(img.height, wb - box[1]))
+        if crop[2] - crop[0] > 200 and crop[3] - crop[1] > 150:
+            img = img.crop(crop)
+    model = (svc.config["ai"].get("vision_models") or ["qwen/qwen3.8-27b"])[0]
+    pieces = _pieces(img)
+    daily_ok = svc.brain.used_today(model) < float(svc.config["ai"].get("vision_daily_tokens", 200000)) * 0.6
+    ask = READ_ASK + (" Only this part: %s." % what if what else "")
+    try:
+        if len(pieces) > 1 and daily_ok and svc.brain.budget(model) >= TILES_COST:
+            text = svc.brain.see("You read screens aloud for the user. The active window is: %s." % title,
+                                 ask + READ_TILES.format(n=len(pieces)), [data_url(p) for _, p in pieces],
+                                 max_tokens=1800)
+        else:
+            img.thumbnail((1600, 1600))
+            text = svc.brain.see("You read screens aloud for the user. The active window is: %s." % title, ask,
+                                 data_url(img), max_tokens=1800)
+    except BrainUnavailable as e:
+        raise ActionError(str(e))
+    text = re.sub(r"^```\w*\n|\n```$", "", (text or "").strip())
+    if not text or text.strip().upper().rstrip(".") == "NONE":
+        return "I don't see any text to read there."
+    return _say_chunk(text)
+
+
+@action("read_more", "Keep reading what Gem was reading from the screen.", ai=False)
+def read_more():
+    if not _reading["rest"] or time.time() - _reading["t"] > 1800:
+        return "There's nothing left to read."
+    return _say_chunk(_reading["rest"])
 
 
 # ── Colour picker ────────────────────────────────────────────────────────────

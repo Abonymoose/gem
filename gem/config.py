@@ -96,6 +96,17 @@ DEFAULTS = {
         "vision_models": ["qwen/qwen3.8-27b"],
         "reasoning_effort": "low",
         "history_turns": 4,
+        # Used only when Groq is rate limited or down, and only if its key is set (an environment variable,
+        # or the Backup AI field in the dashboard). Any OpenAI-compatible service can be added here.
+        "backups": [
+            {"name": "Gemini", "key_env": "GEMINI_API_KEY",
+             "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+             "models": ["gemini-flash-latest", "gemini-flash-lite-latest"], "vision_models": ["gemini-flash-latest"],
+             "extra": {"reasoning_effort": "none"}},
+            {"name": "OpenRouter", "key_env": "OPENROUTER_API_KEY",
+             "url": "https://openrouter.ai/api/v1/chat/completions",
+             "models": ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free"], "vision_models": []},
+        ],
     },
 
     "calls": {

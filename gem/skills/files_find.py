@@ -189,6 +189,89 @@ def find_files(query="", kind="", biggest=False):
     return card("files", text_out, rows=rows, total=len(hits))
 
 
+RECENT_DIR = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Recent")
+NOT_WORK = {".exe", ".msi", ".lnk", ".url", ".ini", ".tmp", ".log", ".dll", ".sys"}
+
+
+def _recent_items(limit=150):
+    """Files Windows lists as recently opened, newest first: [(path, when opened)]."""
+    try:
+        links = [e for e in os.scandir(RECENT_DIR) if e.name.lower().endswith(".lnk")]
+    except OSError:
+        return []
+    links.sort(key=lambda e: -e.stat().st_mtime)
+    try:
+        import pythoncom
+        import win32com.client
+        pythoncom.CoInitialize()
+        shell = win32com.client.Dispatch("WScript.Shell")
+    except Exception:
+        return []
+    out, seen = [], set()
+    for e in links[:limit]:
+        try:
+            target = shell.CreateShortcut(e.path).TargetPath
+        except Exception:
+            continue
+        key = os.path.normcase(target or "")
+        if not target or key in seen or os.path.splitext(target)[1].lower() in NOT_WORK or not os.path.isfile(target):
+            continue
+        seen.add(key)
+        out.append((target, e.stat().st_mtime))
+    return out
+
+
+WORK_KINDS = ("document", "slides", "spreadsheet", "pdf", "code")
+
+
+def _recently_saved(exts=None, limit=150):
+    """When Windows isn't keeping recent items (it's a privacy setting), the files you saved most recently in your
+    own folders, leaving out downloads (and screenshots, unless you asked for pictures)."""
+    exts = exts or set().union(*(KINDS[k] for k in WORK_KINDS))
+    downloads = os.path.normcase(known_folder("downloads") or "~")
+    files = [(p, mtime) for p, name, ext, mtime, size in _files()
+             if ext in exts and not os.path.normcase(p).startswith(downloads)]
+    files.sort(key=lambda f: -f[1])
+    return files[:limit]
+
+
+@action("recent_files", "Files the user opened recently (what they were working on), optionally of a kind or with "
+        "words in the name; open=true opens the newest match.", "query?: str, kind?: str, open?: bool")
+def recent_files(query="", kind="", open=False):
+    text = (query or "").lower()
+    kinds = {KIND_WORDS[w] for w in re.findall(r"[a-z]+", text) if w in KIND_WORDS}
+    if kind and kind.lower() in KINDS:
+        kinds.add(kind.lower())
+    elif kind and kind.lower() in KIND_WORDS:
+        kinds.add(KIND_WORDS[kind.lower()])
+    exts = set().union(*(KINDS[k] for k in kinds)) if kinds else None
+    words = [w for w in re.findall(r"[a-z0-9]+", text) if w not in STOP and w not in KIND_WORDS and len(w) > 1
+             and w not in ("working", "worked", "opened", "using", "used", "had")]
+    hits = []
+    recent = _recent_items()
+    for path, opened in recent or _recently_saved(exts):
+        name = os.path.basename(path).lower()
+        if exts and os.path.splitext(name)[1] not in exts:
+            continue
+        if words and not all(w in name for w in words):
+            continue
+        hits.append((path, opened))
+    if not hits:
+        what = "%s files" % kind if kind else "files like that" if words else "files"
+        return "I don't see any recent %s." % what
+    top = hits[:5]
+    last_results.update(t=time.time(), items=[p for p, _ in top])
+    if open:
+        os.startfile(top[0][0])
+        return "Opening %s." % os.path.splitext(os.path.basename(top[0][0]))[0]
+    rows = [{"name": os.path.basename(p), "folder": os.path.basename(os.path.dirname(p)), "when": _when(t),
+             "size": _size(os.path.getsize(p))} for p, t in top]
+    names = ", then ".join(os.path.splitext(r["name"])[0] for r in rows[:3])
+    said = ("Most recently you had %s open." if recent else "The files you saved most recently are %s.") % names
+    return card("files", said + " Say open the first one to pick up where you left off.", rows=rows,
+                total=len(hits))
+
+
 @action("open_result", "Open one of the files just found (1 = first).", "number: number, folder?: bool")
 def open_result(number=1, folder=False):
     items = last_results["items"] if time.time() - last_results["t"] < 600 else []

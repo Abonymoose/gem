@@ -10,7 +10,6 @@ import time
 import numpy as np
 
 from ..actions import ActionError, action
-from ..cards import card
 from ..parse import parse_duration
 from ..runtime import svc
 
