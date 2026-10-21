@@ -85,6 +85,9 @@ def _source(word):
 _THIS = r"(this|that|it|the selection|the selected text|selected text|what i selected|my clipboard|" \
         r"the clipboard|what i copied|this text|that text)"
 
+# "Delete that macro": which one is for the AI to work out from the conversation, not a fuzzy name match.
+_PRONOUNS = {"that", "this", "it", "the", "my", "last", "new", "same", "that one", "this one", "last one", "new one"}
+
 _RELATIONS = ["sister", "brother", "mom", "mum", "mother", "dad", "father", "friend", "cousin", "grandma", "grandpa",
               "aunt", "uncle", "roommate"]
 # Words that can follow "that was" / "block" without being someone's name.
@@ -117,7 +120,7 @@ def _rules():
         from .skills import macros
         if not macros.recording():
             return None
-        return Match("macro_record", {"command": "stop", "name": m.group(1) or ""}, False)
+        return Match("macro_record", {"command": "stop", "name": macros.clean_name(m.group(1) or "")}, False)
 
     @rule(r"^(?:cancel|discard|scrap|throw away|delete|forget)(?: the| that| this)? (?:macro )?recording$", safe=False)
     def _(m, t):
@@ -128,15 +131,21 @@ def _rules():
           r"^(?:watch|learn) (?:what i do|me)(?: and (?:call it|save it as|name it) (.+))?$|"
           r"^(?:start|begin) (?:a )?macro recording$", safe=False)
     def _(m, t):
-        return Match("macro_record", {"command": "start", "name": m.group(1) or m.group(2) or ""}, False)
+        from .skills import macros
+        return Match("macro_record", {"command": "start", "name": macros.clean_name(m.group(1) or m.group(2) or "")},
+                     False)
 
-    @rule(r"^(?:call it|name it|save (?:it|that|this) as)(?: a| the)?(?: macro)?(?: called| named)? (.+)$", safe=False)
+    @rule(r"^(call it|name it|save (?:it|that|this) as) (.+)$", safe=False)
     def _(m, t):
         from .skills import macros
-        explicit = " macro" in t.split(" as ", 1)[-1] if " as " in t else False
-        if not (macros.awaiting_name() or macros.plan_recent() or explicit):
+        name = m.group(2)
+        if re.match(r"^(?:a )?(?:day|night|quits)$", name):
+            return None
+        explicit = bool(re.search(r"\bmacro\b", name))
+        naming = m.group(1).startswith(("call", "name"))
+        if not (explicit or macros.awaiting_name() or (naming and macros.plan_recent())):
             return None                         # "save this as ..." is screen memory otherwise
-        return Match("macro_name", {"name": re.sub(r"\s+macro$", "", m.group(1))}, False)
+        return Match("macro_name", {"name": macros.clean_name(name)}, False)
 
     @rule(r"^(?:stop|cancel|abort|kill|end|halt)(?: the| this| my)? (?:macro|routine)$|"
           r"^stop (?:running|doing) (?:the macro|the routine|that|it)$")
@@ -146,7 +155,8 @@ def _rules():
     @rule(r"^(?:run|start|play|do)(?: the| my)? (.+?) (?:macro|routine)$|"
           r"^(?:run|play|start)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
     def _(m, t):
-        return Match("routine_run", {"name": m.group(1) or m.group(2)}, False)
+        name = m.group(1) or m.group(2)
+        return None if name in _PRONOUNS else Match("routine_run", {"name": name}, False)
 
     @rule(r"^(?:what (?:macros|routines) do i have|list (?:my )?macros|(?:show (?:me )?)?my macros)$")
     def _(m, t):
@@ -155,7 +165,8 @@ def _rules():
     @rule(r"^(?:delete|remove)(?: the| my)? (.+?) (?:macro|routine)$|"
           r"^(?:delete|remove)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
     def _(m, t):
-        return Match("routine_delete", {"name": m.group(1) or m.group(2)}, False)
+        name = m.group(1) or m.group(2)
+        return None if name in _PRONOUNS else Match("routine_delete", {"name": name}, False)
 
     @rule(r"^(?:figure out how to|work out how to|find a way to|automate|try to figure out how to) (.+)$", safe=False)
     def _(m, t):

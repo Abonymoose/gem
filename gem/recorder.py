@@ -16,7 +16,7 @@ import time
 
 from .runtime import svc
 from .winapi import MODIFIERS, VK, foreground_window, key_code, toggle_state, vk_name, window_at, window_class, \
-    window_pid, window_rect_physical, window_title
+    window_owner, window_pid, window_rect_physical, window_title
 
 log = logging.getLogger("gem.recorder")
 
@@ -198,6 +198,8 @@ class _Steps:
     def _flush(self):
         if self._buf:
             text, self._buf = self._buf, ""
+            if re.match(r"^\s*(?:this|that|what i say)(?: down)?\s*$", text, re.I) or text[:1] in "\"“'":
+                text = '"%s"' % text                 # so it replays as typing, not as a command
             self._add("type " + text, self._buf_start, self._buf_at)
 
     def _add(self, step, start, end=None):
@@ -351,7 +353,7 @@ class Recorder:
         if code == 0 and wparam in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
             ms = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
             if not (ms.flags & LLMHF_INJECTED) and not _talking():
-                self._events.put(("click", time.monotonic(), wparam, ms.pt.x, ms.pt.y))
+                self._events.put(("click", time.monotonic(), wparam, ms.pt.x, ms.pt.y, _user32.GetForegroundWindow()))
         return _user32.CallNextHookEx(None, code, wparam, lparam)
 
     def _hook_thread(self, session):
@@ -414,11 +416,12 @@ class Recorder:
                     else:
                         self._steps.key(what[1], app, t, title)
             return
-        _, t, button, x, y = event
+        _, t, button, x, y, fg = event
         root = window_at(x, y)
         if not self._usable(root):
             return
-        if window_class(root) == "#32768":           # a pop-up menu isn't in the same spot next time
+        # A pop-up menu or dropdown (owned by the app, never the active window) isn't in the same spot next time.
+        if window_class(root) == "#32768" or (window_owner(root) and root != fg):
             with self._lock:
                 note = "I didn't record clicks in pop-up menus. Use keys or a “click …” step for those."
                 if self._steps and note not in self._steps.notes:

@@ -8,6 +8,7 @@ the screen. Contacts ("Aarav's email is ...") live in contacts.json in the data 
 import difflib
 import logging
 import re
+import threading
 import time
 import urllib.parse
 import webbrowser
@@ -75,7 +76,10 @@ def contact_save(name="", email="", discord="", google_chat=""):
         if not fields["email"]:
             raise ActionError("That doesn't sound like an email address. Try spelling it with at and dot.")
     if discord:
-        fields["discord"] = discord.strip().lstrip("@")
+        handle = " " + discord.strip().lower() + " "
+        for said, sign in ((r"under ?score", "_"), (r"dot", "."), (r"dash|hyphen", "-")):
+            handle = re.sub(r"\s+(?:%s)\s+" % said, sign, handle)
+        fields["discord"] = re.sub(r"\s+", "", handle).lstrip("@")
     if google_chat:
         fields["google_chat"] = spoken_email(google_chat) or google_chat.strip()
     if not fields:
@@ -91,36 +95,43 @@ def contact_save(name="", email="", discord="", google_chat=""):
 # ── Understanding requests (on the words as said, so the message keeps its capitals and punctuation) ──
 
 _APP = r"(?P<app>discord|google chat|g ?chat|hangouts)"
-_SAYING = (r"(?:\s*,?\s+(?:saying that|saying|that says|which says|to say that|to say|telling (?:them|him|her) "
-           r"that|telling (?:them|him|her)|that)\s+|\s*:\s*)")
+_SAYING = (r"(?:\s*,?\s+(?:saying|that says|which says|to say|telling (?:them|him|her)(?: that)?|that)\s*[:,]?\s+|"
+           r"\s*:\s*)")
 _MESSAGE = [
+    r"^(?:send|write)(?: an?)? " + _APP + r" (?:message|msg|dm|text) to (?P<to>.+?)" + _SAYING + r"(?P<text>.+)$",
+    r"^(?:send|post)(?: an?)? (?:message|msg|dm|text) (?:on|in) " + _APP + _SAYING + r"(?P<text>.+)$",
     r"^(?:send|write) (?P<to>.+?) an? (?:message|msg|dm|text|note),? (?:on|in|over|via|through|using) " + _APP +
     _SAYING + r"(?P<text>.+)$",
-    r"^(?:send|write)(?: a| an)? (?:message|msg|dm|text|note)? ?(?:to )?(?P<to>.+?),? (?:on|in|over|via|through|using) "
-    + _APP + _SAYING + r"(?P<text>.+)$",
-    r"^(?:message|msg|dm|text|ping|tell)\s+(?P<to>.+?),? (?:on|in|over|via|through) " + _APP +
-    r"(?:" + _SAYING + r"|\s*,?\s+)(?P<text>.+)$",
+    r"^(?:send|write)(?: an?)? (?:message|msg|dm|text|note|reply)? ?(?:to )?(?P<to>.+?),? (?:on|in|over|via|through|"
+    r"using) " + _APP + _SAYING + r"(?P<text>.+)$",
+    r"^(?:message|msg|dm|text|ping|tell)\s+(?P<to>.+?),? (?:on|in|over|via|through) " + _APP + _SAYING +
+    r"(?P<text>.+)$",
     r"^(?:on|in) " + _APP + r",? (?:send|message|tell|text|dm|ping)(?: a message to)? (?P<to>.+?)" + _SAYING +
     r"(?P<text>.+)$",
-    r"^(?:send|post)(?: a)? (?:message|msg) (?:on|in) " + _APP + _SAYING + r"(?P<text>.+)$",
     r"^(?:send|post|say|write) (?P<text>.+?) (?:to (?P<to>.+?) )?(?:on|in) " + _APP + r"$",
 ]
 _EMAIL = r"(?:send |write )?(?:an? )?e-?mail"
 _EMAILS = [
-    r"^" + _EMAIL + r" (?:to )?(?P<to>.+?),? (?:with the subject|subject|titled) (?P<subject>.+?)" + _SAYING +
-    r"(?P<body>.+)$",
+    r"^" + _EMAIL + r" (?:to )?(?P<to>.+?),? (?:with the subject|subject|titled)\s*[:,]?\s+(?P<subject>.+?)" +
+    _SAYING + r"(?P<body>.+)$",
     r"^" + _EMAIL + r" (?:to )?(?P<to>.+?)" + _SAYING + r"(?P<body>.+)$",
 ]
 _CONTACT = (r"^(?:the )?(?P<name>[a-z]+(?: [a-z]+)?)(?:'s| s) (?P<what>e-?mail(?: address)?|discord(?: name| username|"
             r" handle| tag)?|google chat(?: name| email)?|g ?chat(?: name| email)?)\s+(?:is|=)\s+(?P<value>.+?)$")
+# Not a person or channel to send to, or not a message to send word for word: those are left to the AI.
+_NOT_TO = re.compile(r"^(?:me|us|myself|ourselves|everyone here|(?:an? |the )?(?:message|msg|dm|text|note|reply))$|"
+                     r"^me\b", re.I)
+_NOT_TEXT = re.compile(r"^(?:this|that|it|these|those|my .+|the (?:file|screenshot|picture|photo|link|image).*|"
+                       r"(?:a |an )?(?:message|msg|dm|text|screenshot|file|picture|photo))$", re.I)
 
 
 def _clean(raw):
-    t = re.sub(r"^\s*(?:(?:hey|hi|ok|okay|yo)\s+)?(?:gem|jem)\b[,.!]?\s*", "", (raw or "").strip(), flags=re.I)
+    """What was said without "hey Gem", "can you", "please" and a trailing ", Gem" (as router.normalize does)."""
+    t = re.sub(r"^\s*(?:(?:hey|hi|ok|okay|yo|oi)\s+)?(?:gem|jem)\b[,.!]?\s*", "", (raw or "").strip(), flags=re.I)
     for _ in range(2):
-        t = re.sub(r"^(?:please|can you|could you|would you|will you|i want you to|i need you to|go ahead and|just)\s+",
-                   "", t, flags=re.I)
-    return t.strip()
+        t = re.sub(r"^(?:please|can you|could you|would you|will you|can u|i want you to|i need you to|go ahead and|"
+                   r"just|quickly|now)[,]?\s+", "", t, flags=re.I)
+    return re.sub(r",\s*(?:gem|jem)\s*[.!?]*$", "", t.strip(), flags=re.I).strip()
 
 
 def _body(text):
@@ -132,16 +143,18 @@ def _body(text):
 
 
 def parse_message(raw):
-    """'Message Aarav on Discord saying I'm late' -> {"app", "to", "text"}, or None."""
+    """'Message Aarav on Discord saying I'm late' -> {"app", "to", "text"}, or None (the AI handles the rest)."""
     t = _clean(raw)
     for pattern in _MESSAGE:
         m = re.match(pattern, t, re.I | re.S)
-        if m:
-            text = _body(m.group("text"))
-            if re.match(r"^(?:a |an )?(?:message|msg|dm|text)$", text, re.I):
-                text = ""
-            to = (m.groupdict().get("to") or "").strip(" ,")
-            return {"app": m.group("app").lower(), "to": to, "text": text}
+        if not m:
+            continue
+        text = _body(m.group("text"))
+        to = (m.groupdict().get("to") or "").strip(" ,")
+        to = re.sub(r"^(?:an? |the )?(?:message|msg|dm|text|reply) to\s+", "", to, flags=re.I)
+        if (to and _NOT_TO.match(to)) or _NOT_TEXT.match(text):
+            return None
+        return {"app": m.group("app").lower(), "to": to, "text": text}
     return None
 
 
@@ -213,7 +226,13 @@ def _bring(match, open_name=None, url=None, wait=25):
     return 0
 
 
+_started = threading.local()      # .stops: safety.stops() when this thread's send began
+
+
 def _check_front(hwnd, label):
+    """Between preparation steps: you didn't say stop, and the app is still in front."""
+    if safety.stops() != getattr(_started, "stops", safety.stops()) or safety.stopping():
+        raise ActionError("Stopped.")
     if foreground_window() != hwnd:
         raise ActionError("%s isn't in front any more, so I stopped." % label)
 
@@ -222,6 +241,8 @@ def _same(a, b):
     a, b = _key(a), _key(b)
     if not a or not b:
         return False
+    if min(len(a), len(b)) < 4:                  # "me" isn't in "#memes"
+        return a in b.split() or b in a.split()
     if a in b or b in a:
         return True
     if difflib.SequenceMatcher(None, a, b).ratio() >= 0.75:
@@ -376,11 +397,13 @@ def send_message(app="discord", to="", text=""):
     if safety.unattended():
         return safety.skip("Send “%s” to %s on %s" % (_short(text), shown or "the open chat", label))
     names = [n for n in (handle, shown) if n]
+    _started.stops = safety.stops()
     if which == "discord":
         hwnd, where = _ready_discord(handle, names, text)
     else:
         hwnd, where = _ready_gchat(handle, names, text)
     where, warning = _verify(hwnd, label, names, text, where)
+    _check_front(hwnd, label)                    # a stop or panic while Gem was looking
     ready = _plain_title(window_title(hwnd))
     return safety.ask("Send on %s" % label, lambda: _press_send(hwnd, ready, ("enter",), label), app=label,
                       to=where or shown or "the open chat", message=text, warning=warning,
@@ -417,6 +440,7 @@ def _ready_gmail(address, subject, body):
             break
     if not hwnd:
         raise ActionError("Gmail didn't open in your browser. Are you signed in?")
+    _check_front(hwnd, "Gmail")
     settle = time.time() + 6
     while time.time() < settle and "compose" not in window_title(hwnd).lower():
         time.sleep(0.4)                              # wait for the draft to finish loading
@@ -460,6 +484,7 @@ def send_email(to="", subject="", body=""):
     subject = (subject or "").strip() or _subject_for(body)
     if safety.unattended():
         return safety.skip("Email %s about “%s”" % (name or address, _short(subject)))
+    _started.stops = safety.stops()
     hwnd, ready = _ready_gmail(address, subject, body)
     return safety.ask("Send email", lambda: _send_gmail(hwnd, ready), app="Gmail",
                       to=("%s <%s>" % (name, address)) if name else address, subject=subject, message=body,
@@ -489,5 +514,12 @@ def offer_send(text, what="reply"):
         return None
     label = apps.friendly_name(hwnd).capitalize() or "this app"
     ready = _plain_title(window_title(hwnd))
+    rest = _key(ready)
+    for word in ("whatsapp", "telegram", "signal", "messenger", "microsoft teams", "teams", "slack", "outlook", "mail",
+                 "inbox", "discord", "google chat", "chat", "web", window_process_name(hwnd).replace(".exe", ""),
+                 _key(label)):
+        rest = re.sub(r"\b%s\b" % re.escape(word), " ", rest) if word else rest
+    if len(re.sub(r"[^a-z0-9]", "", rest)) < 2:
+        return None                              # the title doesn't say which chat: Gem couldn't check it's the same
     return safety.ask("Send this %s" % what, lambda: _press_send(hwnd, ready, keys, label), app=label,
                       to=_short(ready, 50), message=text, on_cancel=lambda: "It's still in the box.")

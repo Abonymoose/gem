@@ -136,9 +136,9 @@ DEFAULTS = {
         "deafen_keys": "ctrl+shift+d",
     },
 
-    # Big steps wait for one of these phrases: sending a message or email, Enter in a chat or a terminal, deleting
-    # files, clicking a Send/Delete/Buy-like button, power actions, running a plan Gem worked out. "Yes" isn't enough,
-    # and if Gem knows your voice it has to be you. Scheduled runs skip big steps and tell you afterwards.
+    # Big steps wait for a set phrase: the first one approves sending (messages, emails, Enter in a chat), the last one
+    # everything else (Enter in a terminal, deleting files, risky clicks, power, plans Gem worked out). "Yes" isn't
+    # enough, and if Gem knows your voice it has to be you. Scheduled runs skip big steps and tell you afterwards.
     "safety": {
         "confirm_phrases": ["send it", "confirm"],
         "confirm_seconds": 45,
@@ -150,7 +150,7 @@ DEFAULTS = {
 
     "macros": {
         "step_delay": 0.15,                   # seconds between steps, so apps keep up
-        "max_steps": 60,
+        "max_steps": 200,
         "record_minutes": 10,                 # a recording stops by itself after this long
     },
 

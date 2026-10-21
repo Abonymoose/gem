@@ -31,7 +31,7 @@ OK = "\x00ok"                   # what a step's own action returns when it worke
 
 PLAN = """You plan steps for Gem, a voice assistant, to do a task on {name}'s Windows PC by itself. Each step is one short line:
 - one of Gem's own commands, said plainly: "open discord", "open gmail", "volume 30", "start a focus session"
-- "send a discord message to NAME saying TEXT", "send a google chat message to NAME saying TEXT", "email NAME saying TEXT": the only way to send anything (Gem shows it and waits for the user's OK)
+- "message NAME on discord saying TEXT", "message NAME on google chat saying TEXT", "email NAME saying TEXT": the only way to send anything (Gem shows it and waits for the user's OK)
 - "switch to APP", "wait 2 seconds", "wait for APP"
 - "type TEXT": types into the app in front (never put line breaks in it)
 - "press KEYS": e.g. "press ctrl+k", "press tab", "press enter"
@@ -60,7 +60,7 @@ _TIMES = {"twice": 2, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "ten
 def parse_step(text):
     """A step line -> {"do": wait|wait_for|focus|type|keys|click_at|click|checkpoint|command, ...}."""
     raw = (text or "").strip()
-    t = re.sub(r"\s+", " ", raw.lower()).strip().rstrip(".")
+    t = re.sub(r"(?<=[^\s+.])\.+$", "", re.sub(r"\s+", " ", raw.lower()).strip())     # not "press ." / "ctrl+."
     m = re.match(r"^(?:wait|waits|pause|sleep)(?: for)? %s ?(ms|milliseconds?|s|secs?|seconds?|mins?|minutes?)?$"
                  % _NUM, t)
     if m:
@@ -74,8 +74,11 @@ def parse_step(text):
     m = re.match(r"^(?:switch|switches|go back) to (?:the )?(.+?)(?: app| window)?$|^focus(?: on)? (?:the )?(.+?)"
                  r"(?: app| window)?$", t)
     if m:
-        return {"do": "focus", "app": m.group(1) or m.group(2)}
-    m = re.match(r"^(?:type|types|write|writes) (.+)$", raw, re.I | re.S)
+        known = router.match(router.normalize(raw)[0], raw)
+        if not known or known.action in ("switch_to", "open_app", "restore_app"):   # "switch to headphones" isn't
+            return {"do": "focus", "app": m.group(1) or m.group(2)}
+        return {"do": "command", "text": raw}
+    m = re.match(r"^(?:type|types) (.+)$", raw, re.I | re.S)
     if m and not re.match(r"^(?:this|that|what i say)(?: down)?$", m.group(1).lower()):
         text = m.group(1)
         q = re.match(r'^\s*(["“\'])(.*)(["”\'])\s*$', text, re.S)
@@ -105,24 +108,28 @@ def parse_step(text):
 
 # ── Running ──────────────────────────────────────────────────────────────────
 
-class _Stop(ActionError):
-    """Stops the macro, with the sentence to say."""
+class _Stop(BaseException):
+    """Stops the macro, with the sentence to say. Not an Exception, so nothing on the way can swallow it."""
 
 
 class Run:
     def __init__(self, name, steps, unattended):
         self.name = name
-        self.steps = steps[:int(cfg().get("max_steps", 60) or 60)]
+        self.total = len(steps)
+        self.steps = steps[:int(cfg().get("max_steps", 200) or 200)]
         self.unattended = unattended
+        self.depth = 0               # how many macros deep the step being run is
         self.abort = threading.Event()
         self.reason = ""
         self.waiting = False         # waiting for the user's OK on a big step
         self.target = 0              # the window the macro is working in
-        self.last_typed = ""
+        self.last_typed = None       # (window, text) the step before typed, for the "send what's typed" card
         self.skipped = []
         self.typing_since = time.monotonic()
         self.card = {"kind": "macro", "name": name, "done": False, "current": 0, "note": "",
                      "steps": [{"text": s, "state": "pending"} for s in self.steps]}
+        if self.total > len(self.steps):
+            self.card["note"] = "I'll only run the first %d of its %d steps." % (len(self.steps), self.total)
         self.thread = threading.Thread(target=self._main, name="macro", daemon=True)
 
     # ── Thread ──
@@ -136,7 +143,7 @@ class Run:
         svc.state.update(macro_running=self.name)
         caption("Running %s." % self.name, card=self.card)
         stopped = None
-        with safety.context(unattended=self.unattended, skipped=self.skipped):
+        with safety.context(unattended=self.unattended, skipped=self.skipped, should_stop=self.abort.is_set):
             try:
                 self._run_steps(self.steps, top=True)
             except _Stop as e:
@@ -151,6 +158,13 @@ class Run:
 
     def _run_steps(self, steps, top=False, depth=0):
         delay = float(cfg().get("step_delay", 0.15) or 0.15)
+        outer, self.depth = self.depth, depth
+        try:
+            self._steps(steps, top, depth, delay)
+        finally:
+            self.depth = outer
+
+    def _steps(self, steps, top, depth, delay):
         for i, text in enumerate(steps):
             self._check_abort()
             row = self.card["steps"][i] if top else None
@@ -176,6 +190,9 @@ class Run:
         name = self.name
         if stopped:
             text = stopped
+        elif self.total > len(self.steps):
+            text = "I ran the first %d steps of %s; it has %d, more than I run in one go." % (
+                len(self.steps), name, self.total)
         elif skipped:
             text = "%s is done, but I skipped %s because nobody was here to OK %s." % (
                 name.capitalize(), ", ".join("“%s”" % _short(s) for s in skipped),
@@ -198,6 +215,7 @@ class Run:
     def _step(self, text, depth):
         s = parse_step(text)
         do = s["do"]
+        typed, self.last_typed = self.last_typed, None
         if do == "wait":
             if self.abort.wait(s["seconds"]):
                 self._check_abort()
@@ -209,16 +227,18 @@ class Run:
             self._focus(s["app"])
             return "done"
         if do == "type":
-            return self._type(s["text"])
+            return self._type(s["text"], typed)
         if do == "keys":
-            return self._keys(s)
+            return self._keys(s, typed)
         if do == "click_at":
             return self._click_at(s)
         if do == "click":
             return self._click(s)
         if do == "checkpoint":
-            return self._gate(s["text"] or "Keep going with %s" % self.name, lambda: OK, phrase="confirm",
-                              chip="Keep going")
+            if self._gate(s["text"] or "Keep going with %s" % self.name, lambda: OK, phrase="confirm",
+                          chip="Keep going") == "skipped":
+                raise _Stop("I stopped %s at “ask me first” because nobody was here to OK it." % self.name)
+            return "done"
         return self._command(s["text"], depth)
 
     def _gate(self, title, run, **kw):
@@ -239,10 +259,18 @@ class Run:
             raise _Stop({"expired": "I didn't hear your OK for “%s”, so I stopped %s." % (title, self.name),
                          "replaced": "Something else needed your OK, so I stopped %s." % self.name}.get(
                 outcome, "Okay, I stopped %s." % self.name))
+        self.typing_since = time.monotonic()          # what you typed while deciding doesn't stop the macro
         caption("", card=self.card)                   # back to the progress card
         if result != OK:
             raise _Stop(result or "That didn't work, so I stopped %s." % self.name)
         return "done"
+
+    def _unchanged(self, hwnd, title, rect=None):
+        """Right before a key press or click: same window, same chat or page (title) and, for clicks, same place."""
+        if self._ready_for_input() != hwnd or _plain_title(window_title(hwnd)) != title or \
+                (rect is not None and window_rect_physical(hwnd) != rect):
+            raise ActionError("%s changed since I asked, so I didn't do it." % (
+                apps.friendly_name(hwnd).capitalize() or "The window"))
 
     def _ready_for_input(self):
         """The window to type or click in: the macro's app, still in front. Stops the macro otherwise."""
@@ -301,14 +329,14 @@ class Run:
             return self._wait_for(app, 25.0)
         return self._wait_for(app, 5.0)
 
-    def _type(self, text):
+    def _type(self, text, typed=None):
         hwnd = self._ready_for_input()
         release_modifiers()
         type_plain(text, soft_newlines=safety.window_kind(hwnd) == "messaging")   # never presses Enter
-        self.last_typed = text
+        self.last_typed = (hwnd, (typed[1] if typed and typed[0] == hwnd else "") + text)
         return "done"
 
-    def _keys(self, s):
+    def _keys(self, s, typed=None):
         chord = s["chord"]
         if not chord:
             raise _Stop("I don't know the keys in “press %s”, so I stopped %s." % (s["keys"], self.name))
@@ -316,10 +344,14 @@ class Run:
             raise _Stop("“press %s” would press one of Gem's own keys, so I stopped %s." % (s["keys"], self.name))
         hwnd = self._ready_for_input()
         big = safety.big_key(chord, hwnd)
+        title = _plain_title(window_title(hwnd))
+        text = typed[1] if typed and typed[0] == hwnd else ""
+        if chord == ["shift", "enter"] and text:
+            self.last_typed = (hwnd, text + "\n")      # a new line in the same message
 
         def go():
-            if big and self._ready_for_input() != hwnd:
-                raise ActionError("The window changed, so I didn't do it.")
+            if big:
+                self._unchanged(hwnd, title)
             release_modifiers()
             for _ in range(s["times"]):
                 press(*chord)
@@ -329,8 +361,10 @@ class Run:
             go()
             return "done"
         sending = big.startswith("Send")
-        return self._gate(big, go, app=apps.friendly_name(hwnd).capitalize(), to=_short(window_title(hwnd), 50),
-                          message=self.last_typed if sending else "", phrase="send it" if sending else "confirm")
+        return self._gate(big, go, app=apps.friendly_name(hwnd).capitalize(), to=_short(title, 50),
+                          message=text if sending else "", phrase="send it" if sending else "confirm",
+                          warning="" if text or not sending else "I can't see what's in the box. Check it before "
+                                                                    "you say send it.")
 
     def _click_at(self, s):
         if s.get("app"):
@@ -344,11 +378,11 @@ class Run:
             raise _Stop("Something is covering that spot in %s, so I stopped %s." % (
                 apps.friendly_name(hwnd) or "the app", self.name))
         big = safety.big_click("", hwnd, at_position=True)
+        title = _plain_title(window_title(hwnd))
 
         def go():
-            if self._ready_for_input() != hwnd or window_rect_physical(hwnd) != (left, top, right, bottom):
-                raise ActionError("The window moved, so I didn't click.")
-            click_at(x, y, s["button"], s["double"])
+            self._unchanged(hwnd, title, (left, top, right, bottom))
+            _click(x, y, hwnd, s)
             return OK
         if not big:
             go()
@@ -360,6 +394,7 @@ class Run:
         from .screen import point_at
         what = s["target"]
         hwnd = self._ready_for_input()
+        rect, title = window_rect_physical(hwnd), _plain_title(window_title(hwnd))
         try:
             found = point_at(what)
         except BrainUnavailable as e:
@@ -368,19 +403,22 @@ class Run:
             raise _Stop("I couldn't find %s on the screen, so I stopped %s." % (what, self.name))
         x, y, box, monitor, label = found
         under = window_at(x, y)
-        if not under or window_pid(under) == os.getpid():
-            raise _Stop("I couldn't find %s on the screen, so I stopped %s." % (what, self.name))
-        rect = window_rect_physical(hwnd)
-        big = safety.big_click("%s %s" % (what, label), hwnd)
+        if not under or window_pid(under) != window_pid(hwnd):
+            raise _Stop("I found %s, but not in %s, so I stopped %s." % (
+                what, apps.friendly_name(hwnd) or "the app", self.name))
+        try:
+            self._unchanged(hwnd, title, rect)                   # nothing moved while Gem was looking
+        except ActionError as e:
+            raise _Stop("%s So I stopped %s." % (e, self.name))
+        big = safety.big_click("%s %s" % (what, label), hwnd, at_position=True)
         show = bool(svc.overlay) and (svc.config.get("appearance") or {}).get("screen_highlights", True)
         if show:
             seconds = float(safety.cfg().get("confirm_seconds", 45)) if big else 1.2
             svc.overlay.highlight(monitor, [(box, label or what)], seconds=seconds)
 
         def go():
-            if self._ready_for_input() != hwnd or window_rect_physical(hwnd) != rect:
-                raise ActionError("The window moved, so I didn't click.")
-            click_at(x, y, s["button"], s["double"])
+            self._unchanged(hwnd, title, rect)
+            _click(x, y, hwnd, s)
             return OK
         if not big:
             time.sleep(1.0)                           # a moment to see what Gem is about to click
@@ -400,19 +438,15 @@ class Run:
         if nested:
             if depth >= 2:
                 raise _Stop("Macros inside macros only go two deep, so I stopped %s." % self.name)
+            if nested.get("check"):                   # written by the AI and never run: show it first
+                if self._gate("Run %s for the first time" % nested["name"], lambda: OK, to=nested["name"],
+                              lines=nested.get("steps") or [], phrase="confirm", chip="Run it") == "skipped":
+                    return "skipped"
+                routines.save(nested["name"], nested.get("steps"), nested.get("phrases"))
             self._run_steps(nested.get("steps") or [], depth=depth + 1)
             return "done"
         if m and m.action in ("macro_record", "macro_auto", "macro_save", "quit_gem", "voice_train"):
             raise _Stop("“%s” can't be a step in a macro, so I stopped %s." % (text, self.name))
-        if m and m.action == "power" and m.args.get("command") not in ("lock", "cancel_shutdown"):
-            from .system import POWER_WORDS, _do_power
-            command = m.args.get("command")
-            if command not in POWER_WORDS:
-                raise _Stop("I can't do “%s”, so I stopped %s." % (text, self.name))
-            return self._gate(POWER_WORDS[command].capitalize(), lambda: _said(_do_power(command)), phrase="confirm")
-        if m and m.action == "power_when":
-            return self._gate("Turn off the PC later (%s)" % text, lambda: _said(actions.run(m.action, m.args)),
-                              phrase="confirm")
         before = foreground_window()
         before = (before, window_title(before))
         ok, results = svc.assistant.execute(text)
@@ -424,10 +458,14 @@ class Run:
             raise _Stop("Okay, I stopped %s." % self.name if outcome == "cancelled" else
                         "I didn't get your OK, so I stopped %s." % self.name)
         said = " ".join(str(r) for r in results if r)
+        failed = [str(r) for r in results if isinstance(r, actions.Failure)]
         if outcome == "approved":
+            self.typing_since = time.monotonic()
             caption("", card=self.card)
-            if not said.startswith("Sent"):
-                raise _Stop("%s So I stopped %s." % (said or "That didn't work.", self.name))
+            if failed:
+                raise _Stop("%s So I stopped %s." % (failed[0], self.name))
+            if said:
+                say(said)                             # "Sent.", "Restarting in 10 seconds..."
         if not ok:
             raise _Stop("“%s” didn't work%s, so I stopped %s." % (text, (": " + _short(said, 80)) if said else "",
                                                                   self.name))
@@ -456,11 +494,18 @@ class Run:
         self.target = 0                               # nothing new came up: use whatever is in front next
 
 
-def _said(text):
-    """A big step's own result, said out loud (the step itself counts as done)."""
-    if text:
-        say(str(text))
-    return OK
+def _plain_title(title):
+    from .messaging import _plain_title as plain
+    return plain(title)
+
+
+def _click(x, y, hwnd, s):
+    """Click, unless something else now covers the spot or the mouse moved off it."""
+    under = window_at(x, y)
+    if not under or window_pid(under) != window_pid(hwnd):
+        raise ActionError("Something else is over that spot now, so I didn't click.")
+    if not click_at(x, y, s["button"], s["double"]):
+        raise ActionError("The mouse moved, so I didn't click.")
 
 
 def _gem_hotkey(chord):
@@ -493,7 +538,9 @@ def start(routine):
             _run = Run(name, steps, safety.unattended())
             _run.thread.start()
             return None
-    r._run_steps(steps, depth=1)          # a macro step running another macro (outside the lock, so stop works)
+    if r.depth >= 2:
+        raise _Stop("Macros inside macros only go two deep, so I stopped %s." % r.name)
+    r._run_steps(steps, depth=r.depth + 1)    # a macro step running another macro (outside the lock, so stop works)
     return None
 
 
@@ -516,7 +563,8 @@ def on_tap():
     """Caps Lock tap: stops a macro that's busy typing or clicking (not one waiting for your OK)."""
     with _lock:
         r = _run
-    if r is not None and r.thread.is_alive() and not r.waiting:
+    req = safety.current()
+    if r is not None and r.thread.is_alive() and not r.waiting and not (req and req.blocking):
         abort("Stopped %s." % r.name)
 
 
@@ -546,8 +594,16 @@ def awaiting_name():
 
 
 def plan_recent():
-    """Gem worked out a plan in the last half hour (so "save that as ..." means it)."""
-    return bool(_last_plan["steps"]) and time.time() - _last_plan["t"] < 1800
+    """Gem worked out a plan in the last ten minutes (so "call it ..." can mean it)."""
+    return bool(_last_plan["steps"]) and time.time() - _last_plan["t"] < 600
+
+
+def clean_name(name):
+    """'a macro called Standup' / 'the standup macro' -> 'standup'."""
+    n = re.sub(r"^(?:as\s+)?(?:a |an |the |my )?(?:new )?(?:macro|routine)?\s*(?:called |named )?", "",
+               (name or "").strip(), flags=re.I)
+    n = re.sub(r"\s+(?:macro|routine)$", "", n.strip(), flags=re.I)
+    return re.sub(r"^(?:the|my)\s+", "", n.strip(), flags=re.I).strip(" .")
 
 
 def note_command(text, action_names):
@@ -581,8 +637,9 @@ def _record_stop(name=""):
 
 
 def _save(name, steps, notes=()):
+    name = clean_name(name) or name
     _rec["pending"] = None
-    saved = routines.routine_create(name=name, steps=steps)
+    saved = routines.save(name, steps)
     extra = " ".join(notes)
     return card("macro", ("%s %s" % (saved, extra)).strip(), name=routines._norm(name), done=True, current=0,
                 note=extra, steps=[{"text": s, "state": "done"} for s in steps])
@@ -624,7 +681,7 @@ def macro_name(name=""):
     if awaiting_name():
         steps, notes, _ = _rec["pending"]
         return _save(name, steps, notes)
-    if plan_recent():
+    if _last_plan["steps"] and time.time() - _last_plan["t"] < 1800:
         return _save(name, _last_plan["steps"])
     return "There's nothing new to save. Say record a macro first."
 
@@ -659,6 +716,6 @@ def macro_auto(goal=""):
     routine = {"name": title.lower(), "steps": steps}
     log.info("Plan for %r: %s", goal, steps)
     if safety.cfg().get("confirm_ai_plans", True):
-        return safety.ask("Run this plan", lambda: start(routine) or "Starting.", to=title, lines=steps,
+        return safety.ask("Run this plan", lambda: start(routine) or "", to=title, lines=steps,
                           phrase="confirm", chip="Run it")
     return start(routine)

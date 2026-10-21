@@ -31,6 +31,10 @@ FILLER = {"yeah", "yes", "no", "okay", "ok", "lol", "bro", "what", "huh", "right
           "so", "and", "the", "i", "it", "is", "that", "this", "you", "a"}
 
 HISTORY_FILE = os.path.join(DATA_DIR, "history.jsonl")
+
+
+def _failed(result):
+    return isinstance(result, actions.Failure) or str(result or "").startswith(("Sorry", "I couldn't", "I can't"))
 HISTORY_MAX = 2000
 
 
@@ -79,11 +83,10 @@ class Assistant:
         try:
             if m:
                 res = actions.run(m.action, m.args)
-                return not str(res or "").startswith(("Sorry", "I couldn't", "I can't")), [res]
+                return not _failed(res), [res]
             plan = svc.brain.plan(command, "typed")
-            results = [actions.run(a["name"], a["args"]) for a in plan["actions"]]
-            ok = bool(plan["actions"]) and not any(str(r or "").startswith(("Sorry", "I couldn't")) for r in results)
-            return ok, results
+            results = self._run_actions(plan["actions"], [])
+            return bool(plan["actions"]) and not any(_failed(r) for r in results), results
         except Exception as e:
             log.warning("Routine step %r failed: %s", command, e)
             return False, []
@@ -265,28 +268,44 @@ class Assistant:
         if not addressed:
             caption(None, you=text)
 
-        names, results = [], []
+        names = []
         macros.note_command(text, [a["name"] for a in plan["actions"]])
-        for a in plan["actions"]:
-            names.append(a["name"])
-            results.append((a["name"], actions.run(a["name"], a["args"])))
+        safety.reset_outcome()
+        done = self._run_actions(plan["actions"], names)
+        results = list(zip(names, done))
         cards = [card_of(r) for _, r in results if card_of(r)]
         reply = plan["reply"]
-        if plan["continue"]:
+        if plan["continue"] and safety.last_outcome() != "asked":
             try:
                 final = svc.brain.follow_up(plan, results)
-                results = []        # the first results were for the model; its final reply covers them
-                for a in final.get("actions", []):
-                    names.append(a["name"])
-                    results.append((a["name"], actions.run(a["name"], a["args"])))
+                first = len(names)
+                done = self._run_actions(final.get("actions", []), names)
+                results = list(zip(names[first:], done))   # the first results were for the model
                 cards = [card_of(r) for _, r in results if card_of(r)] or cards
                 reply = final.get("reply", "")
             except BrainUnavailable as e:
                 reply = str(e)
+        if safety.last_outcome() == "asked":
+            # A big step is waiting for "send it": show its card, whatever else the plan did.
+            cards = [c for c in cards if c.get("kind") == "approve"][-1:] or cards
         spoken = " ".join([r for _, r in results if r] + ([reply] if reply else []))
         if not spoken and not names and explicit:
             spoken = "Sorry, I didn't get that."        # never leave a push-to-talk request hanging
         self._respond(spoken, text, item.source, names, card=cards[0] if cards else None)
+
+    @staticmethod
+    def _run_actions(acts, names):
+        """Run a plan's actions in order. Only one big step per request: once one is waiting for the user's OK,
+        the rest isn't done (doing it would replace what's on the card)."""
+        results = []
+        for a in acts:
+            if safety.last_outcome() == "asked":
+                results.append("I'll do one thing at a time: OK this one first, then ask me for the rest.")
+                names.append("approve_one_at_a_time")
+                break
+            names.append(a["name"])
+            results.append(actions.run(a["name"], a["args"]))
+        return results
 
     @staticmethod
     def _who_is_speaking(item):

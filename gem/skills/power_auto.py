@@ -94,6 +94,7 @@ def _watch(my_id, power, trigger, minutes):
         "downloads finish (download_done), or after some minutes (time). Warns a minute before, and can be cancelled.",
         "power: shutdown|sleep|hibernate|restart, trigger: media_end|download_done|time, minutes?: number")
 def power_when(power="shutdown", trigger="media_end", minutes=None):
+    from .. import safety
     power = power if power in WORDS else "shutdown"
     if trigger == "time":
         if not minutes:
@@ -101,6 +102,15 @@ def power_when(power="shutdown", trigger="media_end", minutes=None):
         minutes = float(minutes)
     elif trigger == "download_done" and not _downloads_busy():
         raise ActionError("I don't see a download in progress right now.")
+    if safety.unattended():
+        return safety.skip("%s later" % WORDS[power].capitalize())
+    if threading.current_thread().name == "macro":       # a macro step: same rule as the other power steps
+        return safety.ask("%s later" % WORDS[power].capitalize(),
+                          lambda: _plan(power, trigger, minutes), phrase="confirm")
+    return _plan(power, trigger, minutes)
+
+
+def _plan(power, trigger, minutes):
     job.update(id=job["id"] + 1, action=power, trigger=trigger, since=time.time(), cancelled=False)
     threading.Thread(target=_watch, args=(job["id"], power, trigger, minutes), name="power-when", daemon=True).start()
     what = {"media_end": "when what you're watching ends", "download_done": "when your downloads finish",

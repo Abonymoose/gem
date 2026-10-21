@@ -14,7 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from .actions import ActionError
+from .actions import ActionError, Failure
 from .cards import card
 from .runtime import caption, notify, say, svc
 from .winapi import window_class, window_process_name, window_title
@@ -37,8 +37,8 @@ MESSAGING_APPS = {"discord.exe", "discordptb.exe", "discordcanary.exe", "whatsap
 BROWSERS = {"brave.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "vivaldi.exe",
             "arc.exe", "iexplore.exe"}
 MESSAGING_TITLES = re.compile(
-    r"\b(?:gmail|google chat|chat|mail|inbox|outlook|whatsapp|messenger|messages?|instagram|slack|teams|discord|"
-    r"telegram|linkedin|twitter|reddit|proton ?mail|yahoo|compose|dm|direct)\b|\bx\.com\b", re.I)
+    r"\b(?:gmail|google chat|chat|mail|inbox|outlook|whatsapp|messenger|messages?|instagram|facebook|slack|teams|"
+    r"discord|telegram|linkedin|twitter|reddit|proton ?mail|yahoo|compose|dm|direct)\b|\bx\.com\b|/ x\b", re.I)
 # Browser pages where Enter or a click can buy, pay, or change an account.
 RISKY_PAGES = re.compile(r"\b(?:checkout|check out|cart|basket|payment|pay|paypal|bank|banking|billing|order|purchase|"
                          r"transfer|wallet|account|security|password|settings|delete)\b", re.I)
@@ -54,7 +54,8 @@ RISKY_CLICK = re.compile(
 
 _lock = threading.RLock()
 _current = None                 # the Request waiting for an answer
-_local = threading.local()      # per thread: unattended, outcome, skipped
+_local = threading.local()      # per thread: unattended, outcome, skipped, should_stop
+_stops = [0]                    # bumped by every stop / panic, so work that started earlier can tell
 
 
 def cfg():
@@ -64,14 +65,26 @@ def cfg():
 # ── Who is asking ────────────────────────────────────────────────────────────
 
 @contextmanager
-def context(unattended=False, skipped=None):
-    """Mark everything run on this thread inside the block as started by the user or not (scheduled)."""
-    old = (getattr(_local, "unattended", False), getattr(_local, "skipped", None))
-    _local.unattended, _local.skipped = bool(unattended), skipped
+def context(unattended=False, skipped=None, should_stop=None):
+    """Mark everything run on this thread inside the block as started by the user or not (scheduled). should_stop
+    (a macro's abort) ends any wait for an answer inside it."""
+    old = (getattr(_local, "unattended", False), getattr(_local, "skipped", None), getattr(_local, "should_stop", None))
+    _local.unattended, _local.skipped, _local.should_stop = bool(unattended), skipped, should_stop
     try:
         yield
     finally:
-        _local.unattended, _local.skipped = old
+        _local.unattended, _local.skipped, _local.should_stop = old
+
+
+def stops():
+    """How many times the user has said stop (or panicked) so far: compare before and after slow work."""
+    return _stops[0]
+
+
+def stopping():
+    """True if the macro running this thread has been told to stop."""
+    should_stop = getattr(_local, "should_stop", None)
+    return bool(should_stop and should_stop())
 
 
 def unattended():
@@ -115,12 +128,15 @@ def window_kind(hwnd):
         return "risky page"
     if proc in TERMINALS:
         return "terminal"
+    cls = window_class(hwnd)
+    if cls == "#32770" and re.match(r"(?:delete|permanently delete|confirm (?:file|folder|multiple file) delete)",
+                                    window_title(hwnd) or "", re.I):
+        return "delete dialog"
     if proc == "explorer.exe":
-        cls = window_class(hwnd)
         if cls == "#32770" and (window_title(hwnd) or "").lower() == "run":
             return "terminal"
-        if cls in ("CabinetWClass", "ExploreWClass"):
-            return "files"
+        if cls in ("CabinetWClass", "ExploreWClass", "Progman", "WorkerW"):
+            return "files"                       # File Explorer and the desktop
     return ""
 
 
@@ -138,8 +154,10 @@ def big_key(chord, hwnd):
         return "Run the command that's typed"
     if kind == "risky page" and main == "enter":
         return "Press Enter on %s" % (window_title(hwnd) or "this page")[:60]
-    if kind == "files" and main == "delete":
+    if kind == "files" and (main == "delete" or keys == ["ctrl", "d"]):
         return "Delete the selected files" + (" for good" if "shift" in mods else "")
+    if kind == "delete dialog" and (main in ("enter", "space") or keys in (["y"], ["alt", "y"])):
+        return "Confirm deleting the files"
     if main == "delete" and mods >= {"ctrl", "shift"}:
         return "Clear browsing data"
     return None
@@ -156,6 +174,8 @@ def big_click(description, hwnd, at_position=False):
                                                          or "this app")
     if kind == "risky page":
         return "Click on %s" % (window_title(hwnd) or "this page")[:60]
+    if kind in ("files", "delete dialog"):
+        return "Click in %s (it could delete something)" % ("File Explorer" if kind == "files" else "the delete box")
     return None
 
 
@@ -167,10 +187,19 @@ def phrases():
 
 
 def is_phrase(plain):
-    for p in phrases():
-        if plain in (p, "yes " + p, "yeah " + p, "ok " + p, "okay " + p, "yes " + p + " now", p + " now"):
-            return True
-    return False
+    """Any of the approval phrases (also "yes, send it", "send it now")."""
+    return any(_says(plain, p) for p in phrases())
+
+
+def _says(plain, phrase):
+    return plain in (phrase, "yes " + phrase, "yeah " + phrase, "ok " + phrase, "okay " + phrase, phrase + " now",
+                     "yes " + phrase + " now")
+
+
+def _phrase_for(kind):
+    """The phrase that approves a "send it" or "confirm" step, as set in settings."""
+    ps = phrases()
+    return kind if kind in ps else ps[0] if kind == "send it" else ps[-1]
 
 
 def _name_needed():
@@ -180,17 +209,22 @@ def _name_needed():
         svc.state.effective_mode == ALWAYS_LISTENING and not voiceprint.ready()
 
 
-def hint(phrase="send it"):
+def _say_it(phrase):
+    return ("Gem, " + phrase) if _name_needed() else phrase
+
+
+def hint(kind="send it"):
     """The exact instruction for the card, matching what hear() will accept right now."""
-    say_it = ("Gem, " + phrase) if _name_needed() else phrase
-    return "Say “%s” to %s · “cancel” to stop" % (say_it, "send" if phrase == "send it" else "go ahead")
+    return "Say “%s” to %s · “cancel” to stop" % (_say_it(_phrase_for(kind)), "send" if kind == "send it" else
+                                                  "go ahead")
 
 
 # ── Requests ─────────────────────────────────────────────────────────────────
 
 class Request:
-    def __init__(self, title, run, data, phrase, on_cancel, blocking):
-        self.title, self.run, self.data, self.phrase = title, run, data, phrase
+    def __init__(self, title, run, data, kind, on_cancel, blocking):
+        self.title, self.run, self.data, self.kind = title, run, data, kind
+        self.phrase = _phrase_for(kind)     # the one phrase that approves this request
         self.on_cancel = on_cancel          # () -> sentence to add when it doesn't happen
         self.blocking = blocking            # a macro thread is waiting on it
         self.created = time.time()
@@ -213,7 +247,7 @@ class Request:
     def not_done_note(self):
         lead = {"expired": "I didn't hear “%s”, so I didn't do it." % self.phrase,
                 "replaced": "Something else came up, so I didn't do it."}.get(self.reason, "Okay, I didn't do it.")
-        if self.phrase == "send it":
+        if self.kind == "send it":
             lead = lead.replace("didn't do it", "didn't send it")
         extra = ""
         if self.on_cancel:
@@ -224,14 +258,14 @@ class Request:
         return (lead + " " + extra).strip()
 
     def go(self):
-        """Do the big step (after approval). Returns what to say."""
+        """Do the big step (after approval). Returns what to say (a Failure if it didn't happen)."""
         try:
             return self.run()
         except ActionError as e:
-            return str(e)
+            return Failure(str(e))
         except Exception:
             log.exception("Big step %r failed", self.title)
-            return "Sorry, that didn't work."
+            return Failure("Sorry, that didn't work.")
 
 
 def current():
@@ -244,7 +278,8 @@ def current():
 
 def ask(title, run, *, app="", to="", subject="", message="", lines=None, warning="", phrase="send it", chip=None,
         on_cancel=None, should_stop=None):
-    """Ask before a big step and only do it (run()) once the user says the phrase.
+    """Ask before a big step and only do it (run()) once the user says the phrase. phrase is "send it" for sending
+    and "confirm" for everything else (the user's own phrases from settings are shown).
 
     On the assistant thread this returns the question (with its card) at once; run() happens when the user answers.
     On any other thread (a macro) it waits for the answer and returns run()'s result, or a note that it didn't happen.
@@ -252,21 +287,24 @@ def ask(title, run, *, app="", to="", subject="", message="", lines=None, warnin
     global _current
     if unattended():
         return skip(title)
+    kind = "send it" if phrase == "send it" else "confirm"
     seconds = float(cfg().get("confirm_seconds", 45) or 45)
     data = {"title": title, "app": app, "to": to, "subject": subject, "message": message, "lines": list(lines or []),
-            "warning": warning, "hint": hint(phrase), "seconds": seconds,
-            "chip": chip or ("Send it" if phrase == "send it" else "Confirm")}
+            "warning": warning, "hint": hint(kind), "seconds": seconds,
+            "chip": chip or ("Send it" if kind == "send it" else "Confirm")}
     blocking = threading.current_thread().name != "assistant"
-    req = Request(title, run, data, phrase, on_cancel, blocking)
+    should_stop = should_stop or getattr(_local, "should_stop", None)
+    req = Request(title, run, data, kind, on_cancel, blocking)
     with _lock:
         old, _current = _current, req
-    if old is not None and old.finish(False, "replaced") and not old.blocking and old.title != title:
+    if old is not None and old.finish(False, "replaced") and not old.blocking and \
+            (old.title, old.data.get("to")) != (title, to):            # a revised draft replaces its own quietly
         caption(old.not_done_note(), seconds=3)
     _local.outcome = "asked"
     timer = threading.Timer(seconds, _expire, args=(req,))
     timer.daemon = True
     timer.start()
-    question = _question(title, app, to, phrase)
+    question = _question(title, app, to, req)
     if not blocking:
         return card("approve", question, **data)
     say(question, card=dict(data, kind="approve"))
@@ -279,13 +317,13 @@ def ask(title, run, *, app="", to="", subject="", message="", lines=None, warnin
     return req.not_done_note()
 
 
-def _question(title, app, to, phrase):
+def _question(title, app, to, req):
     # Spoken. It never ends with the phrase itself: push-to-talk keeps a moment of sound from before the key press.
     where = (" to %s" % to) if to and len(to) <= 40 else ""
     on = (" on %s" % app) if app and app.lower() not in title.lower() else ""
-    if phrase == "send it":
-        return "Ready to send%s%s. Say send it when it looks right, or cancel." % (where, on)
-    return "%s%s? Say confirm when you're sure, or cancel." % (title.rstrip(".?"), on)
+    if req.kind == "send it":
+        return "Ready to send%s%s. Say %s when it looks right, or cancel." % (where, on, _say_it(req.phrase))
+    return "%s%s? Say %s when you're sure, or cancel." % (title.rstrip(".?"), on, _say_it(req.phrase))
 
 
 def _expire(req):
@@ -296,14 +334,16 @@ def _expire(req):
 
 
 def cancel(reason="cancelled"):
-    """Drop the waiting request, if any (stop, panic). Returns True if there was one."""
+    """Stop or panic: drop the waiting request, if any, and let slow work that started earlier know. Returns True if
+    a request was waiting."""
+    _stops[0] += 1
     req = current()
     return bool(req and req.finish(False, reason))
 
 
 # ── Answers ──────────────────────────────────────────────────────────────────
 
-def trusted(item, by_name):
+def trusted(item, by_name, phrase="send it"):
     """(ok, why not) for whether an utterance can approve a big step: it must really be the user."""
     if getattr(item, "unattended", False):
         return False, ""
@@ -321,7 +361,12 @@ def trusted(item, by_name):
         return False, "That didn't sound like you, so I'm still waiting."
     if ptt or not _name_needed() or by_name:
         return True, ""
-    return False, "Say “Gem, send it” so I know it's you and not a video, or hold Caps Lock and say it."
+    return False, "Say “Gem, %s” so I know it's you and not a video, or hold Caps Lock and say it." % phrase
+
+
+def _started(item):
+    """When the user started saying (or sent) it: the clip ends after a pause, so count back its length."""
+    return item.created - (len(item.audio) / 2 / 16000.0 if item.audio else 0.0)
 
 
 def hear(item, plain, by_name, other_pending=False):
@@ -337,9 +382,11 @@ def hear(item, plain, by_name, other_pending=False):
             return ""
         return req.not_done_note()
     if is_phrase(plain):
-        if item.created < req.created:
-            return None                              # said before the question was asked
-        ok, why = trusted(item, by_name)
+        if _started(item) < req.created + 0.3:
+            return None                              # started before this question was asked: meant for another
+        if not _says(plain, req.phrase):
+            return _again(req, "This one needs %s. Or say cancel." % _say_it(req.phrase))
+        ok, why = trusted(item, by_name, req.phrase)
         if not ok:
             log.info("Big step %r: refused an answer (%s)", req.title, why or "not the user")
             return _again(req, why) if why else None
@@ -350,12 +397,11 @@ def hear(item, plain, by_name, other_pending=False):
             return ""
         return req.go()
     if plain in NOT_ENOUGH and not other_pending:
-        say_it = ("Gem, " + req.phrase) if _name_needed() else req.phrase
-        return _again(req, "To go ahead, say %s. Or say cancel." % say_it)
+        return _again(req, "To go ahead, say %s. Or say cancel." % _say_it(req.phrase))
     return None
 
 
 def _again(req, text):
     """The request's card again (it may have been dismissed), for however long it has left."""
     left = max(5.0, req.created + req.data["seconds"] - time.time())
-    return card("approve", text, **dict(req.data, seconds=left, hint=hint(req.phrase)))
+    return card("approve", text, **dict(req.data, seconds=left, hint=hint(req.kind)))

@@ -36,14 +36,16 @@ def all_routines():
 
 
 def find(norm_text):
-    """The routine whose name or trigger phrase is exactly what was said (also "run X")."""
-    t = re.sub(r"^(?:run|start|do|activate|begin|play)\s+(?:my\s+|the\s+)?", "", _norm(norm_text))
-    t = re.sub(r"\s+(?:routine|macro)$", "", t)
-    t = re.sub(r"^(?:routine|macro)\s+(?:called\s+|named\s+)?", "", t)
-    for r in all_routines():
-        names = [_norm(r["name"])] + [_norm(p) for p in r.get("phrases", [])]
-        if t in names:
-            return r
+    """The routine whose name or trigger phrase is exactly what was said (also "run X", "run the X macro")."""
+    said = _norm(norm_text)
+    bare = re.sub(r"^(?:run|start|do|activate|begin)\s+(?:my\s+|the\s+)?", "", said)
+    tries = [said, bare, re.sub(r"\s+(?:routine|macro)$", "", bare),
+             re.sub(r"^(?:routine|macro)\s+(?:called\s+|named\s+)?", "", bare)]
+    routines = all_routines()
+    for t in tries:                              # the words as said first: a routine may be called "play fortnite"
+        for r in routines:
+            if t in [_norm(r["name"])] + [_norm(p) for p in r.get("phrases", [])]:
+                return r
     return None
 
 
@@ -63,14 +65,26 @@ def _lookup(name):
 
 
 def run(routine):
-    """Start a routine on the macro runner. It reports back when it's done."""
+    """Start a routine on the macro runner. It reports back when it's done. One the AI wrote (by voice) shows its
+    steps and waits for "confirm" the first time, so you see what Gem understood before it types or clicks."""
+    from .. import safety
     from . import macros
-    return macros.start(routine)
+    if not routine.get("check"):
+        return macros.start(routine)
+
+    def first_run():
+        with store as data:
+            for r in data["routines"]:
+                if _norm(r["name"]) == _norm(routine["name"]):
+                    r.pop("check", None)
+        return macros.start(routine) or ""
+    return safety.ask("Run %s for the first time" % routine["name"], first_run, to=routine["name"],
+                      lines=routine.get("steps") or [], phrase="confirm", chip="Run it")
 
 
 @action("routine_run", "Run one of the user's routines (macros).", "name: str")
 def routine_run(name=""):
-    r = _lookup(name)
+    r = lookup(name)
     if not r:
         raise ActionError("I don't have a routine called %s." % name)
     return run(r)
@@ -83,23 +97,33 @@ def routine_run(name=""):
 def routine_create(name="", steps=None, phrases=None):
     if isinstance(steps, str):
         steps = [s.strip() for s in re.split(r",|\bthen\b|\band then\b", steps) if s.strip()]
+    return save(name, steps, phrases, check=True)
+
+
+def save(name, steps, phrases=None, check=False):
+    """Create or replace a routine. check=True (made by the AI): its first run shows the steps and asks first."""
     steps = [s.strip() for s in (steps or []) if s and s.strip()]
     name = _norm(name)
     if not name or not steps:
         raise ActionError("I need a name and at least one step for the routine.")
     phrases = [_norm(p) for p in (phrases or []) if p and _norm(p)]
+    routine = {"name": name, "phrases": phrases, "steps": steps}
+    if check:
+        routine["check"] = True
     with store as data:
         data["routines"] = [r for r in data["routines"] if _norm(r["name"]) != name]
-        data["routines"].append({"name": name, "phrases": phrases, "steps": steps})
+        data["routines"].append(routine)
     return card("routine", "Saved. Say %s to run it." % name, name=name,
                 steps=[{"text": s, "ok": True} for s in steps])
 
 
 @action("routine_delete", "Delete a routine (macro).", "name: str")
 def routine_delete(name=""):
-    r = _lookup(name)
-    if not r:
-        return "I don't have a routine called %s." % name
+    exact = [r for r in all_routines() if _norm(r["name"]) == _norm(name)]
+    if not exact:
+        close = _lookup(name)                    # never delete a guess
+        return "I don't have a routine called %s.%s" % (name, " Did you mean %s?" % close["name"] if close else "")
+    r = exact[0]
     with store as data:
         data["routines"] = [x for x in data["routines"] if _norm(x["name"]) != _norm(r["name"])]
     name = r["name"]

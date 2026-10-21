@@ -145,7 +145,8 @@ POWER_WORDS = {"shutdown": "shut down", "restart": "restart", "sleep": "put the 
                "sign_out": "sign you out", "hibernate": "hibernate"}
 
 
-@action("power", "Lock, sleep, restart, shut down or sign out (asks to confirm).", "command: lock|sleep|restart|shutdown|sign_out|cancel_shutdown")
+@action("power", "Lock, sleep, restart, shut down or sign out (asks the user to say confirm).",
+        "command: lock|sleep|restart|shutdown|sign_out|cancel_shutdown")
 def power(command="lock"):
     if command == "lock":
         lock_workstation()
@@ -158,9 +159,8 @@ def power(command="lock"):
         return "Cancelled."
     if command not in POWER_WORDS:
         raise ActionError("I can lock, sleep, restart, shut down or sign out.")
-    svc.assistant.confirm("Should I %s? Say yes to confirm." % POWER_WORDS[command],
-                          lambda: _do_power(command))
-    return None
+    from .. import safety
+    return safety.ask("Should I %s" % POWER_WORDS[command], lambda: _do_power(command), phrase="confirm")
 
 
 def _do_power(command):
