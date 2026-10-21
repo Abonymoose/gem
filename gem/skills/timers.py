@@ -21,6 +21,7 @@ from ..config import PROJECT_DIR, JsonStore, runtime
 from ..parse import WEEKDAYS, clock_phrase, duration_phrase, normalize_time_words, parse_duration, parse_when
 from ..runtime import caption, notify, svc
 from ..winapi import idle_seconds
+from . import undo
 
 log = logging.getLogger("gem.timers")
 
@@ -356,6 +357,7 @@ def cancel_timer(match="", kind=None, all=False):
         return "There's nothing to cancel."
     if all:
         _remove({i["id"] for i in items})
+        _undoable(items, "them")
         return "Cancelled %d item%s." % (len(items), "" if len(items) == 1 else "s")
     if match:
         m = match.lower()
@@ -366,7 +368,19 @@ def cancel_timer(match="", kind=None, all=False):
     else:
         target = max(items, key=lambda i: i["created"])
     _remove({target["id"]})
+    _undoable([target], "the %s" % ("%s timer" % target["label"] if target["kind"] == "timer" and target["label"]
+                                    else target["kind"]))
     return "Cancelled " + _describe(target) + "."
+
+
+def _undoable(removed, what):
+    """'Undo that' right after a cancel brings them back, as if they'd never been cancelled."""
+    def restore():
+        with store as data:
+            have = {i["id"] for i in data["items"]}
+            data["items"].extend(i for i in removed if i["id"] not in have)
+        return "You have " + ", ".join(_describe(i) for i in removed[:4]) + " again."
+    undo.remember(what, restore)
 
 
 @action("snooze_alarm", "Snooze what just went off.", "minutes?: number")

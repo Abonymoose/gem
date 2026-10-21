@@ -16,6 +16,7 @@ from ..parse import duration_phrase
 from ..runtime import svc
 from ..winapi import SW_MAXIMIZE, SW_MINIMIZE, foreground_window, known_folder, lock_workstation, press, \
     show_window, window_rect_physical
+from . import undo
 
 log = logging.getLogger("gem.system")
 
@@ -52,14 +53,16 @@ def volume(level=None, change=None, mute=None, app=None):
     if app:
         return _app_volume(app, level, change, mute)
     ep = _endpoint()
-    if mute is not None:
-        ep.SetMute(1 if mute else 0, None)
-        return card("volume", "Muted." if mute else "Unmuted.", level=_master(), muted=bool(mute))
-    if level is None and change is None:
+    if level is None and change is None and mute is None:
         muted = bool(ep.GetMute())
         return card("volume", "Volume is at %d percent%s." % (_master(), ", muted" if muted else ""),
                     level=_master(), muted=muted)
-    new = int(level) if level is not None else _master() + int(change)
+    before, was_muted = _master(), bool(ep.GetMute())
+    undo.remember("the volume", lambda: _restore_volume(before, was_muted))
+    if mute is not None:
+        ep.SetMute(1 if mute else 0, None)
+        return card("volume", "Muted." if mute else "Unmuted.", level=_master(), muted=bool(mute))
+    new = int(level) if level is not None else before + int(change)
     new = max(0, min(100, new))
     ep.SetMasterVolumeLevelScalar(new / 100.0, None)
     if ep.GetMute() and new > 0:
@@ -67,10 +70,26 @@ def volume(level=None, change=None, mute=None, app=None):
     return card("volume", "Volume %d." % new, level=new, muted=False)
 
 
+def _restore_volume(level, muted, app=None):
+    if app:
+        for s in _sessions(app):
+            s.SimpleAudioVolume.SetMasterVolume(level / 100.0, None)
+            s.SimpleAudioVolume.SetMute(1 if muted else 0, None)
+        return "%s volume %d%s." % (app.capitalize(), level, ", muted" if muted else "")
+    ep = _endpoint()
+    ep.SetMasterVolumeLevelScalar(level / 100.0, None)
+    ep.SetMute(1 if muted else 0, None)
+    return "Volume %d%s." % (level, ", muted" if muted else "")
+
+
 def _app_volume(app, level, change, mute):
     sessions = _sessions(app)
     if not sessions:
         return "%s isn't playing any sound." % app.capitalize()
+    if mute is not None or level is not None or change is not None:
+        v = sessions[0].SimpleAudioVolume
+        before, was_muted = int(round(v.GetMasterVolume() * 100)), bool(v.GetMute())
+        undo.remember("%s's volume" % app.capitalize(), lambda: _restore_volume(before, was_muted, app))
     for s in sessions:
         v = s.SimpleAudioVolume
         if mute is not None:
@@ -351,7 +370,13 @@ def screenshot(region="screen"):
 def dark_mode(on=True):
     import winreg
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                         r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", 0, winreg.KEY_SET_VALUE)
+                         r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", 0,
+                         winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE)
+    try:
+        was_dark = winreg.QueryValueEx(key, "AppsUseLightTheme")[0] == 0
+        undo.remember("the theme", lambda: dark_mode(was_dark))
+    except OSError:
+        pass
     value = 0 if on else 1
     winreg.SetValueEx(key, "AppsUseLightTheme", 0, winreg.REG_DWORD, value)
     winreg.SetValueEx(key, "SystemUsesLightTheme", 0, winreg.REG_DWORD, value)
@@ -371,6 +396,12 @@ def brightness(level=None, change=None):
         return card("volume", "Brightness is at %d." % now[0][1], level=now[0][1], icon="sun", header="Brightness")
     if level is not None:
         level = max(0, min(100, int(float(level))))
+    try:
+        before = monitors.brightness()
+    except Exception:
+        before = None
+    if before:
+        undo.remember("the brightness", lambda: brightness(level=before[0][1]))
     done = []
     try:
         done = monitors.set_brightness(level=level, change=float(change) if change is not None else None)

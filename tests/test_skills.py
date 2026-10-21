@@ -3,12 +3,13 @@ import datetime
 import threading
 import time
 import unittest
+from unittest import mock
 
 from . import svc  # noqa: F401  (sets up the test environment)
 from .test_router import route
-from gem import router
+from gem import actions, router
 from gem.config import runtime
-from gem.skills import ambient, text, timeline, timers
+from gem.skills import ambient, system, text, timeline, timers, undo
 
 NOW = datetime.datetime(2026, 10, 21, 20, 15)       # a Wednesday evening
 
@@ -123,6 +124,65 @@ class TimerControlsTest(unittest.TestCase):
         self.assertEqual(route("cancel the pasta timer").args["match"], "pasta")
         self.assertEqual(route("stop the 10 minute timer").args["match"], "")
         self.assertTrue(route("cancel both timers").args["all"])
+
+
+class _FakeSpeakers:
+    def __init__(self, level, muted=False):
+        self.level, self.muted = level / 100.0, int(muted)
+
+    def GetMasterVolumeLevelScalar(self):
+        return self.level
+
+    def SetMasterVolumeLevelScalar(self, v, _ctx):
+        self.level = v
+
+    def GetMute(self):
+        return self.muted
+
+    def SetMute(self, m, _ctx):
+        self.muted = m
+
+
+class UndoTest(unittest.TestCase):
+    def setUp(self):
+        undo.clear()
+        timers.cancel_timer(all=True)
+        undo.clear()
+
+    def test_nothing(self):
+        self.assertEqual(actions.run("undo"), "There's nothing to undo.")
+
+    def test_volume(self):
+        speakers = _FakeSpeakers(40)
+        with mock.patch.object(system, "_endpoint", return_value=speakers):
+            system.volume(change=-30)
+            system.volume(mute=True)
+            self.assertEqual((round(speakers.level * 100), speakers.muted), (10, 1))
+            self.assertEqual(undo.undo(), "Put the volume back. Volume 10.")
+            self.assertEqual(undo.undo(), "Put the volume back. Volume 40.")
+            self.assertEqual((round(speakers.level * 100), speakers.muted), (40, 0))
+            system.volume()                                          # only asking: nothing to undo
+            self.assertIsNone(undo.latest())
+
+    def test_cancelled_timer_comes_back(self):
+        timers.set_timer(minutes=10, label="pasta")
+        timers.cancel_timer("pasta")
+        self.assertEqual(timers._items(), [])
+        self.assertIn("pasta timer", undo.undo())
+        self.assertEqual(timers._timer()["label"], "pasta")
+
+    def test_goes_stale(self):
+        undo.remember("the volume", lambda: "Volume 40.")
+        with mock.patch.object(undo.time, "time", return_value=time.time() + undo.KEEP_SECONDS + 1):
+            self.assertIsNone(undo.latest())
+
+    def test_routes(self):
+        for said in ("undo that", "put it back", "change it back", "undo"):
+            with self.subTest(said=said):
+                m = route(said)
+                self.assertEqual(m.action, "undo")
+                self.assertFalse(m.safe)
+        self.assertEqual(route("undo the tidy").action, "tidy_undo")
 
 
 class TextToolsTest(unittest.TestCase):

@@ -12,6 +12,12 @@ _VOLUME_WORDS = {"set", "change", "turn", "put", "make", "bring", "the", "my", "
 
 
 def register(rule):
+    # Undo Gem's last change (volume, brightness, theme, a cancelled timer)
+    @rule(r"^(?:undo(?: that| it| the last (?:thing|change)| what you (?:just )?did)?|put it back(?: how it was)?|"
+          r"change it back|revert(?: that| it)?|set it back|go back to how it was|bring (?:it|that) back)$", safe=False)
+    def _(m, t):
+        return Match("undo", {}, False)
+
     # Volume
     @rule(r"^(?:what's|what is|check) (?:the |my )?volume(?: level)?$|^how loud is it$|^volume level$")
     def _(m, t):
