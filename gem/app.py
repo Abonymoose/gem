@@ -131,7 +131,9 @@ def _on_release(was_tap):
 
 
 def _on_tap():
+    from .skills import macros
     svc.overlay.dismiss()      # pressing already stopped any speech
+    macros.on_tap()            # and stops a macro that's typing or clicking
 
 
 def _on_triple_tap():

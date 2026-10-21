@@ -68,6 +68,7 @@ Reply with JSON only: {{"addressed": true, "actions": [{{"name": "...", "args": 
 - actions: in order, only from the list. They announce their own results, so leave reply "" when you use them unless you must add something.
 - reply: answer questions from your knowledge. For live or recent facts you can't know (news, scores, prices, schedules), use web_answer. Prefer a fitting action (e.g. weather) over it; web_search only opens results in the browser. If something essential is missing, ask one short question.
 - continue: true only if you need the action results to finish (e.g. check weather, then advise). You'll get them.
+- Sending: messages and emails go only through send_message / send_email, which show the text and wait for the user to say "send it". Never send with type_text or keys, and never say something was sent. Tasks across apps that no single action covers: macro_auto.
 
 Actions:
 {catalog}"""
@@ -123,9 +124,10 @@ def _clean_plan(raw, source):
         reply = ""
     # A web answer speaks for itself; the model's own guess would be stale. The planner can't see the screen,
     # so anything it says about it would be made up: the screen actions answer for themselves.
+    # Sends and plans wait for the user's OK, so anything the model adds ("Sent!") would be wrong too.
     if any(a["name"] in ("web_answer", "explain_screen", "copy_screen_text", "screen_save", "screen_find",
-                         "read_screen", "read_aloud", "timeline_at", "timeline_app", "timeline_day", "recent_files")
-           for a in acts):
+                         "read_screen", "read_aloud", "timeline_at", "timeline_app", "timeline_day", "recent_files",
+                         "send_message", "send_email", "macro_auto", "macro_record", "routine_run") for a in acts):
         reply = ""
     return {
         "addressed": addressed,

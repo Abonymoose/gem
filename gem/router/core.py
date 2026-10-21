@@ -1,5 +1,6 @@
 """Normalising speech, shared helpers and matching against the rules in rules/."""
 import re
+import threading
 from dataclasses import dataclass, field
 
 from ..skills import apps
@@ -100,6 +101,7 @@ _NOT_NAMES = {"it", "me", "him", "her", "them", "us", "you", "gem", "fun", "clos
 
 _RULES = None
 _raw = ""
+_lock = threading.RLock()        # macros match their steps on their own thread; _raw is shared
 
 
 def said():
@@ -138,15 +140,19 @@ def _rules_list():
 def match(text, original=""):
     """Return a Match for normalized text (original is what was said, for punctuation), or None."""
     global _raw
-    rules = _rules_list()
-    _raw = original or text
-    for rx, fn, safe in rules:
-        m = rx.search(text)
-        if not m:
-            continue
-        result = fn(m, text)
-        if result is not None:
-            if not safe:
-                result.safe = False
-            return result
-    return None
+    with _lock:
+        rules = _rules_list()
+        outer, _raw = _raw, original or text
+        try:
+            for rx, fn, safe in rules:
+                m = rx.search(text)
+                if not m:
+                    continue
+                result = fn(m, text)
+                if result is not None:
+                    if not safe:
+                        result.safe = False
+                    return result
+            return None
+        finally:
+            _raw = outer             # a rule that matches a command inside the text gets the outer text back

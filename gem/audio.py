@@ -37,6 +37,7 @@ class Utterance:
     audio: bytes = b""
     text: str = ""
     created: float = field(default_factory=time.time)
+    unattended: bool = False    # queued by Gem itself (a scheduled command): nobody is there to answer
 
     @property
     def seconds(self):

@@ -147,6 +147,24 @@ DEFAULTS = {
         "deafen_keys": "ctrl+shift+d",
     },
 
+    # Big steps wait for one of these phrases: sending a message or email, Enter in a chat or a terminal, deleting
+    # files, clicking a Send/Delete/Buy-like button, power actions, running a plan Gem worked out. "Yes" isn't enough,
+    # and if Gem knows your voice it has to be you. Scheduled runs skip big steps and tell you afterwards.
+    "safety": {
+        "confirm_phrases": ["send it", "confirm"],
+        "confirm_seconds": 45,
+        # Always listening, before Gem knows your voice: say "Gem, send it" so a video saying "send it" can't send.
+        "name_needed_without_voice_lock": True,
+        # Show the steps of anything Gem works out itself ("figure out how to ...") and wait for "confirm" first.
+        "confirm_ai_plans": True,
+    },
+
+    "macros": {
+        "step_delay": 0.15,                   # seconds between steps, so apps keep up
+        "max_steps": 60,
+        "record_minutes": 10,                 # a recording stops by itself after this long
+    },
+
     "snooze_minutes": 10,
 
     # Typed by "tell them I'm away". {name} = your name, {when} = "in about 20 minutes" / "soon".
@@ -222,6 +240,8 @@ DEFAULTS = {
         "google docs": "https://docs.google.com",
         "google calendar": "https://calendar.google.com",
         "google classroom": "https://classroom.google.com",
+        "google chat": "https://chat.google.com",
+        "gchat": "https://chat.google.com",
         "classroom": "https://classroom.google.com",
         "google maps": "https://maps.google.com",
         "maps": "https://maps.google.com",

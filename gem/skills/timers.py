@@ -634,7 +634,7 @@ class Scheduler:
         if item["kind"] == "command":
             log.info("Running scheduled command: %s", item["message"])
             if svc.assistant:
-                svc.assistant.submit_text(item["message"])
+                svc.assistant.submit_text(item["message"], unattended=True)
             return
         if item["kind"] == "timer":
             title = (item["label"].capitalize() + " timer") if item["label"] else "Timer done"

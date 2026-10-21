@@ -217,6 +217,21 @@ def running(name):
     return [p for p in psutil.process_iter(["name"]) if (p.info["name"] or "").lower() in wanted]
 
 
+def friendly_name(hwnd):
+    """The short name Gem uses for the app that owns a window ("discord", "chrome"), as macro steps say it."""
+    proc = window_process_name(hwnd)
+    if not proc:
+        return ""
+    procs = svc.config.get("processes", {}) if svc.config else {}
+    names = [n for n, ps in procs.items() if proc in [p.lower() for p in ps]]
+    return min(names, key=len) if names else re.sub(r"\.exe$", "", proc)
+
+
+def app_windows(name):
+    """Visible top-level windows of an app (by name, process or a word in the title): [(hwnd, title, process)]."""
+    return _app_windows(name)
+
+
 @action("close_app", "Close an app.", "name: str")
 def close_app(name=""):
     procs = running(name)

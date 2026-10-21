@@ -44,10 +44,10 @@ def register(rule):
     def _(m, t):
         return Match("open_gem_settings", {}, False)
 
-    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history|routines)$",
-          safe=False)
+    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history|routines|"
+          r"macros)$", safe=False)
     def _(m, t):
-        page = "history" if "history" in m.group(1) else "routines" if "routines" in m.group(1) else "home"
+        page = "history" if "history" in m.group(1) else "routines" if m.group(1) in ("routines", "macros") else "home"
         return Match("open_dashboard", {"page": page}, False)
 
     @rule(r"^(?:what routines do i have|list (?:my )?routines|my routines)$")

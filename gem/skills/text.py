@@ -3,10 +3,12 @@ import logging
 import re
 import time
 
+from .. import safety
 from ..actions import ActionError, action
 from ..cards import card
 from ..runtime import svc
-from ..winapi import copy_selection, get_clipboard, paste_text, press, release_modifiers, set_clipboard, type_text
+from ..winapi import (copy_selection, foreground_window, get_clipboard, paste_text, press, release_modifiers,
+                      set_clipboard, type_plain, type_text)
 
 log = logging.getLogger("gem.text")
 
@@ -126,12 +128,12 @@ def spell(word=""):
                 result=" ".join(w.upper() for w in words) if len(word) <= 18 else word)
 
 
-@action("type_text", "Type text into the focused app.", "text: str")
+@action("type_text", "Type text into the focused app. Never sends: to send a message use send_message.", "text: str")
 def type_into_app(text=""):
     if not text:
         raise ActionError("What should I type?")
     release_modifiers()
-    type_text(text)
+    _type(text, safety.window_kind(foreground_window()) == "messaging")
     return None
 
 
@@ -149,6 +151,7 @@ _last_chunk = ""
 
 STOP_WORDS = {"stop dictation", "stop dictating", "end dictation", "done dictating", "finish dictation",
               "stop typing", "dictation off", "that's it", "done"}
+ENTER_WORDS = {"press enter", "send it"}     # the assistant checks it's really you first
 
 
 @action("dictation", "Dictation mode on/off.", "on: bool")
@@ -157,6 +160,14 @@ def dictation(on=True):
     if on:
         return "Dictation on. Say stop dictation when you're done."
     return "Dictation off."
+
+
+def _type(text, chat):
+    """In a chat app a line break would be Enter, which sends: there new lines are Shift+Enter."""
+    if chat:
+        type_plain(text, soft_newlines=True)
+    else:
+        type_text(text)
 
 
 def handle_dictation(text):
@@ -173,20 +184,18 @@ def handle_dictation(text):
                 press("backspace")
             _last_chunk = ""
         return None
-    if plain in ("new line", "next line"):
-        type_text("\n")
+    chat = safety.window_kind(foreground_window()) == "messaging"
+    if plain in ("new line", "next line", "new paragraph", "next paragraph"):
+        _type("\n" if plain.endswith("line") else "\n\n", chat)
         return None
-    if plain in ("new paragraph", "next paragraph"):
-        type_text("\n\n")
-        return None
-    if plain in ("press enter", "send it", "send"):
+    if plain in ENTER_WORDS:
         press("enter")
         return None
     chunk = re.sub(r"\s*\b(new line|next line)\b\s*", "\n", text, flags=re.I)
     chunk = re.sub(r"\s*\b(new paragraph)\b\s*", "\n\n", chunk, flags=re.I)
     chunk = chunk.strip() + " "
     release_modifiers()
-    type_text(chunk)
+    _type(chunk, chat)
     _last_chunk = chunk
     time.sleep(0.05)
     return None

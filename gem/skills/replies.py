@@ -1,7 +1,8 @@
 """Reply mode: away notes and reply drafts.
 
-Gem never sends anything itself. It types the text into the message box you're
-in and you press Enter.
+Gem types the text into the message box you're in. You press Enter, or, in chat
+and email apps Gem knows, say "send it" and Gem sends it (messaging.offer_send,
+which checks it's still the same chat first).
 
 - Away note: "I'm stepping away for 30 minutes", then "tell them I'm away" types
   "<name> isn't here right now, this is his voice assistant speaking. He'll be
@@ -16,6 +17,7 @@ import time
 
 from ..actions import ActionError, action
 from ..cards import card
+from . import messaging
 from ..parse import duration_phrase, parse_duration, parse_when
 from ..runtime import svc
 from ..winapi import copy_selection, get_clipboard, press, release_modifiers, set_clipboard
@@ -90,7 +92,8 @@ def away_note():
     template = svc.config.get("away_message") or DEFAULT_AWAY
     text = template.format(name=_name(), when=_when())
     _put_in_box(text)
-    return card("draft", "Typed your away note. Press Enter to send it.", note=text, title="Away note")
+    return messaging.offer_send(text, "away note") or \
+        card("draft", "Typed your away note. Press Enter to send it.", note=text, title="Away note")
 
 
 # ── Drafts ───────────────────────────────────────────────────────────────────
@@ -127,8 +130,9 @@ def reply_draft(instruction=""):
         raise ActionError("I couldn't come up with a reply.")
     _last.update(conversation=conversation, draft=draft, at=time.time())
     _put_in_box(draft)
-    return card("draft", "Draft is in the box. Press Enter to send, or tell me to change it.", note=draft,
-                title="Reply draft")
+    return messaging.offer_send(draft) or \
+        card("draft", "Draft is in the box. Press Enter to send, or tell me to change it.", note=draft,
+             title="Reply draft")
 
 
 @action("reply_revise", "Rewrite the reply draft Gem just typed (e.g. shorter, more casual, different).",
@@ -142,7 +146,8 @@ def reply_revise(instruction="try a different version"):
     draft = _write(_last["conversation"], change)
     _last.update(draft=draft, at=time.time())
     _put_in_box(draft, replace=True)
-    return card("draft", "Updated. Press Enter to send.", note=draft, title="Reply draft")
+    return messaging.offer_send(draft) or \
+        card("draft", "Updated. Press Enter to send.", note=draft, title="Reply draft")
 
 
 def recent_draft():

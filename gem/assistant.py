@@ -9,13 +9,13 @@ import threading
 import time
 from collections import deque
 
-from . import actions, automemory, eggs, router, voiceprint
+from . import actions, automemory, eggs, router, safety, voiceprint
 from .audio import Utterance
 from .brain import BrainUnavailable
 from .cards import card_of
 from .config import DATA_DIR
 from .runtime import caption, say, svc
-from .skills import hearing, power_auto, routines, text as text_skill, trivia, voice_id
+from .skills import hearing, macros, power_auto, routines, text as text_skill, trivia, voice_id
 from .state import ALWAYS_LISTENING
 
 log = logging.getLogger("gem.assistant")
@@ -60,9 +60,10 @@ class Assistant:
     def submit(self, utterance):
         self._queue.put(utterance)
 
-    def submit_text(self, text):
+    def submit_text(self, text, unattended=False):
+        """Typed commands; unattended=True for ones Gem queues itself (scheduled), which can never approve anything."""
         if text and text.strip():
-            self._queue.put(Utterance(source="typed", text=text.strip()))
+            self._queue.put(Utterance(source="typed", text=text.strip(), unattended=unattended))
 
     # ── Helpers other modules use ───────────────────────────────────────────
 
@@ -107,6 +108,10 @@ class Assistant:
             pass
         cfg = svc.config.get("panic", {})
         svc.voice.stop()
+        macros.abort("Stopped.")
+        safety.cancel("aborted")
+        if macros.recording():
+            actions.run("macro_record", {"command": "cancel"})
         for app in cfg.get("close_apps") or []:
             actions.run("close_app", {"name": app})
         if cfg.get("mute", True):
@@ -138,6 +143,10 @@ class Assistant:
                 svc.state.update(thinking=False)
 
     def _handle(self, item):
+        with safety.context(unattended=item.unattended):
+            self._process(item)
+
+    def _process(self, item):
         st = svc.state
         explicit = item.source in ("ptt", "typed")
         text = item.text
@@ -175,7 +184,18 @@ class Assistant:
         if plain in (svc.config.get("panic", {}).get("voice_phrases") or []):
             return self.panic()
 
-        if self._pending:
+        # A big step waiting for "send it" / "confirm" (safety.py). Plain "yes" still answers an ordinary question.
+        if not item.unattended:
+            reply = safety.hear(item, plain, by_name, other_pending=bool(self._pending))
+            if reply is not None:
+                if plain in safety.CANCEL:
+                    self._pending = None
+                return self._respond(reply, text, item.source, ["approve"])
+            if safety.is_phrase(plain) and not self._pending and not st.dictating and \
+                    (explicit or by_name or st.in_conversation()):
+                return self._respond("There's nothing waiting for your OK right now.", text, item.source, [])
+
+        if self._pending and not item.unattended:
             callback, expires = self._pending
             self._pending = None
             if time.time() < expires:
@@ -184,10 +204,10 @@ class Assistant:
                 if plain in NO:
                     return self._respond("Okay, I won't.", text, item.source, [])
 
-        if plain in POWER_CANCEL and power_auto.pending():
+        if plain in POWER_CANCEL and power_auto.pending() and not item.unattended:
             return self._respond(power_auto.power_when_cancel(), text, item.source, ["power_when_cancel"])
 
-        if trivia.active() and (explicit or st.in_conversation()):
+        if trivia.active() and (explicit or st.in_conversation()) and not item.unattended:
             reply = trivia.answer(text, plain)              # None: not an answer, handle it normally
             if reply is not None:
                 return self._respond(reply, text, item.source, ["trivia"])
@@ -195,7 +215,12 @@ class Assistant:
         if voice_id.training_active() and item.audio and item.source in ("ptt", "open"):
             return self._respond(voice_id.train_step(item.audio, plain), text, item.source, ["voice_train"])
 
-        if st.dictating and (explicit or st.effective_mode == ALWAYS_LISTENING):
+        if st.dictating and (explicit or st.effective_mode == ALWAYS_LISTENING) and not item.unattended:
+            if plain in text_skill.ENTER_WORDS:
+                ok, why = safety.trusted(item, by_name)
+                if not ok:
+                    caption(why or "That didn't sound like you, so I didn't press Enter.", seconds=3)
+                    return
             result = text_skill.handle_dictation(text)
             if result:
                 say(result)
@@ -209,6 +234,7 @@ class Assistant:
             if not addressed:
                 caption(None, you=text)
             st.update(thinking=True)
+            macros.note_command(text, ["routine_run"])
             return self._respond(routines.run(routine), text, item.source, ["routine_run"])
 
         # Fast path
@@ -218,6 +244,7 @@ class Assistant:
         if m and (addressed or (m.safe and len(norm.split()) >= 2)):
             if not addressed:
                 caption(None, you=text)
+            macros.note_command(text, [m.action])
             result = actions.run(m.action, m.args)
             return self._respond(result, text, item.source, [m.action])
 
@@ -244,6 +271,7 @@ class Assistant:
             caption(None, you=text)
 
         names, results = [], []
+        macros.note_command(text, [a["name"] for a in plan["actions"]])
         for a in plan["actions"]:
             names.append(a["name"])
             results.append((a["name"], actions.run(a["name"], a["args"])))

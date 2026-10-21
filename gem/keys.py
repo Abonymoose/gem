@@ -12,11 +12,12 @@ Windows never drops the hook for being slow.
 import ctypes
 import ctypes.wintypes as wt
 import logging
+import os
 import queue
 import threading
 import time
 
-from .winapi import VK, shift_held, toggle_state
+from .winapi import VK, foreground_window, shift_held, toggle_state, window_pid
 
 log = logging.getLogger("gem.keys")
 
@@ -24,6 +25,7 @@ WH_KEYBOARD_LL = 13
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
 WM_APP_REINSTALL = 0x8000 + 1
 LLKHF_INJECTED = 0x10
+_PID = os.getpid()
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -61,6 +63,7 @@ class TalkKey:
         self._thread_id = None
         self._proc = HOOKPROC(self._hook_proc)   # keep a reference or it gets collected
         self._taps = []
+        self.last_user_key = 0.0              # time.monotonic() of the user's last real key press outside Gem
 
     def start(self):
         threading.Thread(target=self._hook_thread, name="caps-hook", daemon=True).start()
@@ -72,6 +75,9 @@ class TalkKey:
     def _hook_proc(self, code, wparam, lparam):
         if code == 0:
             kb = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+            if kb.vkCode != VK["caps"] and not (kb.flags & LLKHF_INJECTED) and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN) \
+                    and window_pid(foreground_window()) != _PID:
+                self.last_user_key = time.monotonic()     # a running macro stops when you start typing
             if kb.vkCode == VK["caps"] and not (kb.flags & LLKHF_INJECTED):
                 if wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                     if self._passthrough or (not self._down and shift_held()):
