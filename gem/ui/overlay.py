@@ -40,6 +40,9 @@ class Bridge(QObject):
 
 class CommandBar(QWidget):
     WIDTH = 520
+    LOGO_X = 36                 # logo centre from the bar's left edge (clear of the rounded end)
+    LOGO_R = 10
+    TEXT_GAP = 16               # space between the logo and the text
 
     def __init__(self, ctrl):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -49,7 +52,8 @@ class CommandBar(QWidget):
         self.index = 0
         self.resize(self.WIDTH + 40, 92)
         self.edit = QLineEdit(self)
-        self.edit.setGeometry(54, 26, self.WIDTH - 52, 36)
+        left = 20 + self.LOGO_X + self.LOGO_R + self.TEXT_GAP
+        self.edit.setGeometry(left, 26, 20 + self.WIDTH - 24 - left, 36)
         self.edit.setPlaceholderText("Ask Gem anything…")
         self.edit.setFont(T.font(16))
         self.edit.setStyleSheet("QLineEdit { background: transparent; border: none; color: #f4f0fb; "
@@ -68,7 +72,7 @@ class CommandBar(QWidget):
         p.setBrush(T.ISLAND)
         p.setPen(QPen(T.alpha(T.SOFT, 0.35), 1.2))
         p.drawRoundedRect(box, 28, 28)
-        self.ctrl.island.crystal.draw(p, box.left() + 28, box.center().y(), 10)
+        self.ctrl.island.crystal.draw(p, box.left() + self.LOGO_X, box.center().y(), self.LOGO_R)
         p.end()
 
     def eventFilter(self, obj, e):
