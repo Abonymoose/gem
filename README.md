@@ -109,7 +109,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Screen time | "screen time today", "screen time this week", "how long have I been on Discord today" (tracked on this PC only) |
 | Day recap | "what did I do today": a short summary of your requests, finished to-dos, habits and screen time |
 | Extras | "generate a password" (copied to the clipboard, never spoken), "pick between pizza and tacos", "what did I note about the wifi" |
-| Your screen | "what's this error", "explain my screen", "summarize this page", "look at my screen and tell me what to click" (a screenshot goes to the vision model; Gem never clicks anything). "Explain this" with nothing selected also looks at the screen |
+| Your screen | "what's this error", "explain my screen", "summarize this page", "look at my screen and tell me what to click" (a screenshot goes to the vision model; answering never clicks anything). "Explain this" with nothing selected also looks at the screen |
 | Highlights | When Gem answers about your screen it outlines what it means (the error, the button) and dims the rest for a few seconds. "Where's the save button?", "show me where the error is", "where do I click to change my password". Caps Lock or "hide the outlines" clears them; Look & sound settings can turn them off |
 | Spotlight | "spotlight this window" / "help me focus" dims everything except the window you're in and follows you between windows; "spotlight off" |
 | Autofill | "autofill", "what formula goes here", "solve this", "fill in the blanks": Gem finds what needs filling (empty spreadsheet cells, maths questions, form blanks), outlines each spot and writes the answer right inside the blank as an overlay (with a few words of working under it); when there's no blank, it shows a card beside the question instead. The first one is copied, so click and paste; "copy the second one", "copy the next one". Gem never types into your apps |
@@ -138,7 +138,9 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | More heads-ups | "Aarav's birthday is March 5" → reminded the evening before and on the day; "while you were away" summary when you come back to the PC; softer voice at night (11 PM to 7 AM) |
 | Picks | "what should I watch tonight", "what should I play", "recommend a funny movie": three picks based on your mood, what you've told Gem and the games you have installed |
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
-| Routines | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have" |
+| Routines & macros | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have". Macros can also type, press keys and click: see [Macros](#macros) |
+| Messages & email | "message Aarav on Discord saying I'm running late", "tell Priya on Google Chat that the meeting moved to 3", "email Aarav saying the notes are up". Gem gets it ready and waits for you to say "send it": see [Big steps wait for you](#big-steps-wait-for-you) |
+| Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
 | Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
 
@@ -146,7 +148,8 @@ To lock the PC say "lock my PC"; to close Gem say "close Gem" or use the tray.
 
 ### Reply mode
 
-Gem never sends messages by itself: it types into the message box you're in, and you press Enter.
+Gem types into the message box you're in. You press Enter, or in Discord, Google Chat, Gmail and other chat apps
+say "send it" and Gem sends it (after checking it's still the same chat).
 
 - **Away note**: say "I'm stepping away for 30 minutes" (or "away mode until 6"). In any chat or email, "tell them
   I'm away" types *"Parshv isn't here right now, this is his voice assistant speaking. He'll be back in about 25
@@ -154,6 +157,59 @@ Gem never sends messages by itself: it types into the message box you're in, and
 - **Reply drafts**: copy or select the conversation (Discord, Google Chat, Gmailâ€¦), click in the reply box and say
   "reply to this". Gem writes a reply that matches how you write in that chat and shows it in the island.
   "Make it shorter", "more casual" or "try again" rewrite it in place. The draft also stays on your clipboard.
+
+## Macros
+
+A macro (the same thing as a routine) is one phrase that runs a list of steps. Besides Gem's own commands, steps
+can work inside other apps:
+
+| Step | What it does |
+|---|---|
+| `open discord`, `volume 30`, any command | the same as saying it |
+| `switch to discord` / `wait for discord` | bring that app to the front (waiting for it if it's starting) |
+| `wait 2 seconds` | pause |
+| `type hello everyone` | type into the app in front (never presses Enter) |
+| `press ctrl+k`, `press tab 3 times` | press keys |
+| `click the compose button` | find it on screen with the vision model and click it |
+| `click at 45% 60% in discord` | click a spot in that app's window (what recordings use) |
+| `ask me first` | stop and wait for your "confirm" |
+
+Three ways to make one:
+
+- **Say it**: "create a macro called hello that switches to Discord, types hi everyone and presses enter".
+- **Record it**: "record a macro" (or "watch what I do"), do the task, then "stop recording" and "call it ...".
+  Keys, typing, clicks and app switches are recorded; anything you ask Gem for while recording becomes a step.
+  A red dot in the island shows it's recording. Nothing typed in sign-in or password windows is recorded, and
+  recordings stop on their own after 10 minutes.
+- **Let Gem work it out**: "figure out how to ...". Gem shows its plan and runs it after you say "confirm";
+  "save that as a macro called ..." keeps it.
+
+Run one with its name, "run the hello macro" or from the dashboard (Routines & macros, where you can also edit the
+steps). "Stop", a tap on Caps Lock or starting to type yourself stops a macro. Before every key press, bit of typing
+or click, Gem checks the app it's working in is still in front, and stops rather than typing somewhere else. It never
+types into its own windows.
+
+### Big steps wait for you
+
+Some steps can't be taken back, so Gem shows exactly what will happen and waits for you to say **"send it"** or
+**"confirm"** ("yes" or "okay" isn't enough):
+
+- sending a Discord or Google Chat message or an email (the card shows who it goes to and the exact text),
+- Enter in a chat or email app, or in a terminal; Delete in File Explorer,
+- clicking anything that looks like Send, Delete, Buy, Pay, Submit and the like, or any recorded click in a chat app,
+- restarting, shutting down or signing out from a macro,
+- running a plan Gem worked out itself.
+
+If Gem has learned your voice ("learn my voice"), it has to be your voice saying it. In always-listening mode
+before it knows your voice, say "Gem, send it", so a video saying "send it" can't. Typing the phrase in the command bar
+works too. Say "cancel", or just wait 45 seconds, and nothing happens. Before pressing Send, Gem checks the same window
+is still in front showing the same chat, and double-checks the recipient from the window title or a look at the
+screen; if it's the wrong chat it stops. Gmail lets you undo for a few seconds after sending.
+
+Nothing scheduled can approve a big step. When a macro or command runs while nobody is there to answer ("at 7 pm run
+my morning macro"), big steps are skipped and you get a note about what was skipped.
+
+Phrases, the waiting time and the "Gem, send it" rule are under `"safety"` in `settings.json`.
 
 ## Setup
 
@@ -186,7 +242,8 @@ Everything lives in `C:\Users\<you>\.gem\` (tray icon â†’ More â†’ Dat
 |---|---|
 | `settings.json` | All options, including a few not in the window (call-detection ignore list) |
 | `reminders.json` | Timers, alarms, reminders and the weekly class schedule (your old `gem_alarms.json` is imported on first run) |
-| `todo.json`, `routines.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, routines, notes, remembered facts, conversation history |
+| `todo.json`, `routines.json`, `notes.md`, `memory.json`, `history.jsonl` | To-do list, routines and macros, notes, remembered facts, conversation history |
+| `contacts.json` | Email addresses and Discord / Google Chat names for sending messages |
 | `voices/`, `voice_cache/` | The local voice model and cached phrases |
 | `gem.log` | Log, useful if something doesn't work |
 
@@ -220,3 +277,5 @@ The executable is `dist/Gem.exe` (`hooks/` fixes PyInstaller's packaging of the 
 - In always-listening mode, speech is sent to Groq for transcription; short fragments and filler are dropped
   before any AI call.
 - Notes, to-dos, reminders and memory are stored only in `.gem` on your PC.
+- Recording a macro reads your keys and clicks only between "record a macro" and "stop recording" (the island
+  shows a red dot), skips sign-in and password windows, and keeps the steps in `routines.json` on your PC.

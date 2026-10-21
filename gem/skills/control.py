@@ -84,7 +84,11 @@ def gaming_mode(on=True):
 
 @action("stop", "Stop talking or cancel what Gem is doing.", ai=False)
 def stop():
+    from .. import safety
+    from . import macros
     svc.voice.stop()
+    safety.cancel()
+    macros.abort()
     return None
 
 
@@ -105,7 +109,8 @@ def clear_conversation():
     return "Conversation cleared."
 
 
-@action("open_dashboard", "Open Gem's window.", "page?: home|reminders|classes|todo|notes|memory|history|settings")
+@action("open_dashboard", "Open Gem's window.",
+        "page?: home|reminders|classes|todo|routines|notes|memory|history|settings")
 def open_dashboard(page="home"):
     if svc.overlay:
         svc.overlay.open_dashboard(page or "home")

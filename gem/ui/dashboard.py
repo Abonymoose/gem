@@ -661,7 +661,7 @@ class TodoPage(Page):
 
 
 class RoutinesPage(Page):
-    title = "Routines"
+    title = "Routines & macros"
 
     def __init__(self):
         super().__init__()
@@ -689,6 +689,12 @@ class RoutinesPage(Page):
         self.steps = QPlainTextEdit()
         self.steps.setPlaceholderText("close fortnite\nopen google classroom\nstart a focus session")
         lay.addWidget(self.steps, 1)
+        lay.addWidget(label("One step per line. A step can be any Gem command, or: wait 2 seconds · wait for discord · "
+                            "switch to discord · type hello · press ctrl+k · click the send button · "
+                            "click at 45% 60% in discord · ask me first. Macros you record (“record a macro”) and "
+                            "ones Gem works out for you (“figure out how to …”) show up here too. Big steps, like "
+                            "sending a message or pressing Enter in a chat, always wait for your “send it”.", "Faint",
+                            wrap=True))
         row = QHBoxLayout()
         self.feedback = label("", "Faint")
         row.addWidget(self.feedback, 1)
@@ -1181,7 +1187,8 @@ class SettingsPage(Page):
 
 class Dashboard(QMainWindow):
     PAGES = [("home", "Home", HomePage), ("reminders", "Reminders", RemindersPage), ("classes", "Classes", ClassesPage),
-             ("todo", "To-do", TodoPage), ("routines", "Routines", RoutinesPage), ("notes", "Notes", NotesPage),
+             ("todo", "To-do", TodoPage), ("routines", "Routines && macros", RoutinesPage),       # && shows one &
+             ("notes", "Notes", NotesPage),
              ("memory", "Memory", MemoryPage),
              ("history", "History", HistoryPage), ("settings", "Settings", SettingsPage)]
 

@@ -5,6 +5,7 @@ Every kind of card has a height function and a paint function. Live pieces
 repaints the card every frame while it's visible.
 """
 import datetime
+import functools
 import math
 import os
 import time
@@ -27,7 +28,9 @@ F_BIG = T.font(40, QFont.Light)
 F_HUGE = T.font(36, QFont.Normal)
 F_TIME = T.font(28, QFont.DemiBold)
 F_RING = T.font(15, QFont.DemiBold)
+F_HEAD = T.font(14, QFont.DemiBold)
 _PICK_TITLE_H = 22
+AMBER = QColor(251, 191, 36)
 
 
 def _wrap_height(font, text, width, max_lines=None):
@@ -36,6 +39,27 @@ def _wrap_height(font, text, width, max_lines=None):
     if max_lines:
         h = min(h, fm.lineSpacing() * max_lines)
     return h
+
+
+@functools.lru_cache(maxsize=16)
+def _clamp_body(text, width, max_lines):
+    """F_BODY text cut to at most `max_lines` wrapped lines, with an ellipsis when cut."""
+    fm = QFontMetrics(F_BODY)
+    limit = fm.lineSpacing() * max_lines
+
+    def fits(s):
+        return fm.boundingRect(QRect(0, 0, int(width), 100000), Qt.TextWordWrap, s).height() <= limit
+
+    if fits(text):
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if fits(text[:mid].rstrip() + "…"):
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo].rstrip() + "…"
 
 
 def _clock(ts):
@@ -204,7 +228,7 @@ LABELS = {"weather": "WEATHER", "timer": "TIMER", "focus": "FOCUS", "alarm": "AL
           "world": "WORLD CLOCK", "countdown": "COUNTDOWN", "usage": "SCREEN TIME",
           "screen": "ON YOUR SCREEN", "speed": "INTERNET SPEED", "picks": "PICKS", "tidy": "DOWNLOADS TIDIED",
           "voice": "VOICE TRAINING", "people": "VOICES I KNOW", "color": "UNDER YOUR MOUSE", "files": "FILES",
-          "trivia": "TRIVIA"}
+          "trivia": "TRIVIA", "approve": "NEEDS YOUR OK", "macro": "MACRO"}
 
 
 class CardContent:
@@ -263,6 +287,14 @@ class CardContent:
             label = c["title"].upper()
         if self.kind == "files" and c.get("total"):
             label += " · %d FOUND" % c["total"]
+        if self.kind == "approve" and c.get("app"):
+            label += " · " + c["app"].upper()
+        if self.kind == "macro":
+            steps = c.get("steps") or []
+            if c.get("name"):
+                label += " · " + c["name"].upper()
+            if not c.get("done") and steps:
+                label += " · %d OF %d" % (min(len(steps), c.get("current", 0) + 1), len(steps))
         if self.kind == "trivia":
             label = "TRIVIA · %s" % (c.get("topic") or "").upper()
             if not c.get("done"):
@@ -364,6 +396,20 @@ class CardContent:
             return _wrap_height(F_BODY, self.text, w) + (36 if c.get("sources") else 0)
         if k == "routine":
             return 28 * min(8, len(c.get("steps") or [])) + _wrap_height(F_SMALL, self.text, w) + 10
+        if k == "approve":
+            h = 22 + 20 * (bool(c.get("to")) + bool(c.get("subject")))
+            if c.get("message"):
+                h += 8 + _wrap_height(F_BODY, _clamp_body(c["message"], int(w - 16), 6), w - 16)
+            lines = c.get("lines") or []
+            if lines:
+                h += 8 + 24 * min(8, len(lines)) + (18 if len(lines) > 8 else 0)
+            if c.get("warning"):
+                h += 8 + _wrap_height(F_SMALL, c["warning"], w)
+            return h + 12 + 26 + (8 + _wrap_height(F_SMALL, c["hint"], w) if c.get("hint") else 0)
+        if k == "macro":
+            n = len(c.get("steps") or [])
+            h = 28 * min(8, n) + (18 if n > 8 else 0)
+            return h + (6 + _wrap_height(F_SMALL, c["note"], w) if c.get("note") else 0)
         return _wrap_height(F_BODY, self.text, w)
 
     # ── Painting ─────────────────────────────────────────────────────────────
@@ -744,6 +790,122 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_DIM)
         p.drawText(QRectF(x, ty, w, _wrap_height(F_SMALL, self.text, w) + 4), Qt.TextWordWrap, self.text)
+
+    def _paint_macro(self, p, x, y, w):
+        # The runner updates the steps in place, so this reads the card fresh every frame.
+        c = self.card
+        steps = c.get("steps") or []
+        start = max(0, min(len(steps) - 8, c.get("current", 0) - 3)) if len(steps) > 8 else 0
+        pulse = 0.55 + 0.45 * math.sin(self.t * 5)
+        for i, st in enumerate(steps[start:start + 8]):
+            yy = y + i * 28
+            state = st.get("state", "pending")
+            if state == "done":
+                draw_check(p, x, yy + 3, 18, True)
+            elif state == "failed":
+                p.setPen(QPen(QColor(248, 113, 113), 2, Qt.SolidLine, Qt.RoundCap))
+                p.drawLine(QPointF(x + 5, yy + 8), QPointF(x + 13, yy + 16))
+                p.drawLine(QPointF(x + 13, yy + 8), QPointF(x + 5, yy + 16))
+            elif state == "running":
+                p.setPen(Qt.NoPen)
+                p.setBrush(T.alpha(T.VIOLET, 0.3 * pulse))
+                p.drawEllipse(QPointF(x + 9, yy + 12), 9, 9)
+                p.setBrush(T.alpha(T.LAVENDER, pulse))
+                p.drawEllipse(QPointF(x + 9, yy + 12), 4.5, 4.5)
+            elif state == "waiting":
+                p.setPen(Qt.NoPen)
+                p.setBrush(AMBER)
+                p.drawEllipse(QPointF(x + 9, yy + 12), 4.5, 4.5)
+            elif state == "skipped":
+                p.setPen(QPen(AMBER, 2, Qt.SolidLine, Qt.RoundCap))
+                p.drawLine(QPointF(x + 5, yy + 12), QPointF(x + 13, yy + 12))
+            else:
+                draw_check(p, x, yy + 3, 18, False)
+            text = str(st.get("text", ""))
+            p.setFont(F_ROW)
+            p.setPen(T.TEXT if state in ("done", "running", "waiting") else
+                     T.TEXT_FAINT if state == "skipped" else T.TEXT_DIM)
+            p.drawText(QRectF(x + 30, yy, w - 30, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                       QFontMetrics(F_ROW).elidedText(text[:1].upper() + text[1:], Qt.ElideRight, int(w - 30)))
+        y += 28 * min(8, len(steps))
+        if len(steps) > 8:
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_FAINT)
+            p.drawText(QRectF(x + 30, y, w - 30, 18), Qt.AlignLeft | Qt.AlignVCenter, "+%d more" % (len(steps) - 8))
+            y += 18
+        if c.get("note"):
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_DIM)
+            p.drawText(QRectF(x, y + 6, w, _wrap_height(F_SMALL, c["note"], w) + 4), Qt.TextWordWrap, c["note"])
+
+    def _paint_approve(self, p, x, y, w):
+        # Everything comes from the card: self.text is the spoken (cleaned) version of the message.
+        c = self.card
+        p.setFont(F_HEAD)
+        p.setPen(T.TEXT)
+        p.drawText(QRectF(x, y, w, 22), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(F_HEAD).elidedText(c.get("title", ""), Qt.ElideRight, int(w)))
+        y += 22
+        for name, key in (("To", "to"), ("Subject", "subject")):
+            if c.get(key):
+                p.setFont(F_SMALL)
+                p.setPen(T.TEXT_FAINT)
+                p.drawText(QRectF(x, y, 60, 20), Qt.AlignLeft | Qt.AlignVCenter, name)
+                p.setPen(T.TEXT_DIM)
+                p.drawText(QRectF(x + 60, y, w - 60, 20), Qt.AlignLeft | Qt.AlignVCenter,
+                           QFontMetrics(F_SMALL).elidedText(c[key], Qt.ElideRight, int(w - 60)))
+                y += 20
+        if c.get("message"):
+            msg = _clamp_body(c["message"], int(w - 16), 6)
+            mh = _wrap_height(F_BODY, msg, w - 16)
+            y += 8
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.9))
+            p.drawRoundedRect(QRectF(x, y + 2, 3, mh - 2), 1.5, 1.5)
+            p.setFont(F_BODY)
+            p.setPen(T.TEXT)
+            p.drawText(QRectF(x + 16, y, w - 16, mh + 4), Qt.TextWordWrap, msg)
+            y += mh
+        lines = c.get("lines") or []
+        if lines:
+            y += 8
+            for i, line in enumerate(lines[:8]):
+                p.setFont(F_SMALL)
+                p.setPen(T.TEXT_FAINT)
+                p.drawText(QRectF(x, y, 24, 24), Qt.AlignLeft | Qt.AlignVCenter, "%d." % (i + 1))
+                p.setFont(F_ROW)
+                p.setPen(T.TEXT)
+                p.drawText(QRectF(x + 24, y, w - 24, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                           QFontMetrics(F_ROW).elidedText(str(line), Qt.ElideRight, int(w - 24)))
+                y += 24
+            if len(lines) > 8:
+                p.setFont(F_SMALL)
+                p.setPen(T.TEXT_FAINT)
+                p.drawText(QRectF(x + 24, y, w - 24, 18), Qt.AlignLeft | Qt.AlignVCenter, "+%d more" % (len(lines) - 8))
+                y += 18
+        if c.get("warning"):
+            wh = _wrap_height(F_SMALL, c["warning"], w)
+            y += 8
+            p.setFont(F_SMALL)
+            p.setPen(AMBER)
+            p.drawText(QRectF(x, y, w, wh + 4), Qt.TextWordWrap, c["warning"])
+            y += wh
+        y += 12
+        cx = x
+        p.setFont(T.font(13, QFont.DemiBold))
+        fm = QFontMetrics(p.font())
+        for name, primary in ((c.get("chip") or "Send it", True), ("Cancel", False)):
+            r = QRectF(cx, y, max(64, fm.horizontalAdvance(name) + 28), 26)
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(T.VIOLET, 0.85) if primary else T.alpha(T.SOFT, 0.15))
+            p.drawRoundedRect(r, 13, 13)
+            p.setPen(T.TEXT)
+            p.drawText(r, Qt.AlignCenter, name)
+            cx += r.width() + 10
+        if c.get("hint"):
+            p.setFont(F_SMALL)
+            p.setPen(T.TEXT_FAINT)
+            p.drawText(QRectF(x, y + 34, w, _wrap_height(F_SMALL, c["hint"], w) + 4), Qt.TextWordWrap, c["hint"])
 
     def _paint_draft(self, p, x, y, w):
         note = self.card.get("note", "")

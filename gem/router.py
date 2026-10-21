@@ -8,6 +8,7 @@ meant for Gem (always-listening mode); the rest need Gem's name, push-to-talk
 or an ongoing conversation.
 """
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -106,6 +107,75 @@ def _rules():
             R.append((rx, fn, safe))
             return fn
         return deco
+
+    # Macros and messages come first: a message body ("... in 10 minutes", "turn the volume up") must never run as a
+    # command of its own, and "stop recording" means the macro while one is being recorded.
+    @rule(r"^(?:(?:stop|end|finish|done|quit)(?: the)?(?: macro)? recording(?: the macro)?|stop the macro|"
+          r"(?:save|finish) (?:it|the macro|the recording)|that's it|that's all|i'm done|im done|done)"
+          r"(?:,? (?:and )?(?:call it|name it|save it as|as) (.+))?$", safe=False)
+    def _(m, t):
+        from .skills import macros
+        if not macros.recording():
+            return None
+        return Match("macro_record", {"command": "stop", "name": m.group(1) or ""}, False)
+
+    @rule(r"^(?:cancel|discard|scrap|throw away|delete|forget)(?: the| that| this)? (?:macro )?recording$", safe=False)
+    def _(m, t):
+        from .skills import macros
+        return Match("macro_record", {"command": "cancel"}, False) if macros.recording() else None
+
+    @rule(r"^(?:start |begin )?record(?:ing)? (?:a |me a |new |my )?macro(?: (?:called|named|for) (.+))?$|"
+          r"^(?:watch|learn) (?:what i do|me)(?: and (?:call it|save it as|name it) (.+))?$|"
+          r"^(?:start|begin) (?:a )?macro recording$", safe=False)
+    def _(m, t):
+        return Match("macro_record", {"command": "start", "name": m.group(1) or m.group(2) or ""}, False)
+
+    @rule(r"^(?:call it|name it|save (?:it|that|this) as)(?: a| the)?(?: macro)?(?: called| named)? (.+)$", safe=False)
+    def _(m, t):
+        from .skills import macros
+        explicit = " macro" in t.split(" as ", 1)[-1] if " as " in t else False
+        if not (macros.awaiting_name() or macros.plan_recent() or explicit):
+            return None                         # "save this as ..." is screen memory otherwise
+        return Match("macro_name", {"name": re.sub(r"\s+macro$", "", m.group(1))}, False)
+
+    @rule(r"^(?:stop|cancel|abort|kill|end|halt)(?: the| this| my)? (?:macro|routine)$|"
+          r"^stop (?:running|doing) (?:the macro|the routine|that|it)$")
+    def _(m, t):
+        return Match("macro_stop")
+
+    @rule(r"^(?:run|start|play|do)(?: the| my)? (.+?) (?:macro|routine)$|"
+          r"^(?:run|play|start)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
+    def _(m, t):
+        return Match("routine_run", {"name": m.group(1) or m.group(2)}, False)
+
+    @rule(r"^(?:what (?:macros|routines) do i have|list (?:my )?macros|(?:show (?:me )?)?my macros)$")
+    def _(m, t):
+        return Match("routine_list")
+
+    @rule(r"^(?:delete|remove)(?: the| my)? (.+?) (?:macro|routine)$|"
+          r"^(?:delete|remove)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
+    def _(m, t):
+        return Match("routine_delete", {"name": m.group(1) or m.group(2)}, False)
+
+    @rule(r"^(?:figure out how to|work out how to|find a way to|automate|try to figure out how to) (.+)$", safe=False)
+    def _(m, t):
+        raw = re.search(r"\b(?:how to|a way to|automate)\s+(.+?)[.?!]*$", _raw, re.I)
+        return Match("macro_auto", {"goal": raw.group(1) if raw else m.group(1)}, False)
+
+    @rule(r"\b(?:discord|google chat|g ?chat|hangouts)\b", safe=False)
+    def _(m, t):
+        req = _messaging().parse_message(_raw)
+        return Match("send_message", req, False) if req else None
+
+    @rule(r"^(?:send |write )?(?:an? )?e-?mail\b", safe=False)
+    def _(m, t):
+        req = _messaging().parse_email(_raw)
+        return Match("send_email", req, False) if req else None
+
+    @rule(r"^(?:the )?[a-z]+(?: [a-z]+)?(?:'s| s) (?:e-?mail|discord|google chat|g ?chat)\b", safe=False)
+    def _(m, t):
+        req = _messaging().parse_contact(_raw)
+        return Match("contact_save", req, False) if req else None
 
     # Quiet / resume / stop
     @rule(r"^(?:be quiet|quiet|shut up|stay quiet|stop talking|go quiet|go to sleep|sleep|mute yourself)\s+"
@@ -1357,10 +1427,10 @@ def _rules():
     def _(m, t):
         return Match("open_gem_settings", {}, False)
 
-    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history|routines)$",
-          safe=False)
+    @rule(r"^(?:open|show)(?: me)?(?: the| my| your)? (dashboard|gem|window|history|conversation history|routines|"
+          r"macros)$", safe=False)
     def _(m, t):
-        page = "history" if "history" in m.group(1) else "routines" if "routines" in m.group(1) else "home"
+        page = "history" if "history" in m.group(1) else "routines" if m.group(1) in ("routines", "macros") else "home"
         return Match("open_dashboard", {"page": page}, False)
 
     @rule(r"^(?:what routines do i have|list (?:my )?routines|my routines)$")
@@ -1412,6 +1482,7 @@ def _rules():
 
 _RULES = None
 _raw = ""
+_lock = threading.RLock()        # macros match their steps on their own thread; _raw is shared
 
 
 def _routine(text):
@@ -1419,19 +1490,28 @@ def _routine(text):
     return routines.find(text)
 
 
+def _messaging():
+    from .skills import messaging
+    return messaging
+
+
 def match(text, raw=""):
     """Return a Match for normalized text (raw is the original, for punctuation), or None."""
     global _RULES, _raw
-    if _RULES is None:
-        _RULES = _rules()
-    _raw = raw or text
-    for rx, fn, safe in _RULES:
-        m = rx.search(text)
-        if not m:
-            continue
-        result = fn(m, text)
-        if result is not None:
-            if not safe:
-                result.safe = False
-            return result
-    return None
+    with _lock:
+        if _RULES is None:
+            _RULES = _rules()
+        outer, _raw = _raw, raw or text
+        try:
+            for rx, fn, safe in _RULES:
+                m = rx.search(text)
+                if not m:
+                    continue
+                result = fn(m, text)
+                if result is not None:
+                    if not safe:
+                        result.safe = False
+                    return result
+            return None
+        finally:
+            _raw = outer             # a rule that matches a command inside the text gets the outer text back

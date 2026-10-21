@@ -2,6 +2,7 @@
 import ctypes
 import ctypes.wintypes as wt
 import os
+import re
 import time
 import uuid
 
@@ -43,7 +44,57 @@ VK = {
     "vol_mute": 0xAD, "vol_down": 0xAE, "vol_up": 0xAF,
     "caps": 0x14, "num": 0x90, "scroll": 0x91,
 }
-EXTENDED = {0x25, 0x26, 0x27, 0x28, 0x24, 0x23, 0x2E, 0x5B, 0xB3, 0xB0, 0xB1, 0xB2, 0xAD, 0xAE, 0xAF}
+EXTENDED = {0x25, 0x26, 0x27, 0x28, 0x24, 0x23, 0x2E, 0x5B, 0xB3, 0xB0, 0xB1, 0xB2, 0xAD, 0xAE, 0xAF,
+            0x21, 0x22, 0x2D, 0x5C}
+
+# Every key a macro can press, by name ("press ctrl+k", "press f5", "press ctrl+/").
+KEY_NAMES = dict(VK, **{
+    "return": 0x0D, "escape": 0x1B, "del": 0x2E, "insert": 0x2D, "ins": 0x2D, "pageup": 0x21, "page up": 0x21,
+    "pgup": 0x21, "pagedown": 0x22, "page down": 0x22, "pgdn": 0x22, "control": 0x11, "windows": 0x5B,
+    "apps": 0x5D, "menu": 0x5D, "printscreen": 0x2C, "print screen": 0x2C,
+    ";": 0xBA, "=": 0xBB, ",": 0xBC, "-": 0xBD, ".": 0xBE, "/": 0xBF, "`": 0xC0, "[": 0xDB, "\\": 0xDC,
+    "]": 0xDD, "'": 0xDE, "plus": 0xBB, "minus": 0xBD, "comma": 0xBC, "period": 0xBE, "slash": 0xBF,
+})
+KEY_NAMES.update({"f%d" % i: 0x6F + i for i in range(1, 25)})
+KEY_NAMES.update({c: ord(c.upper()) for c in "abcdefghijklmnopqrstuvwxyz0123456789"})
+# The name a recording writes for each key (the first, shortest name wins).
+VK_NAMES = {}
+for _name, _vk in sorted(KEY_NAMES.items(), key=lambda kv: len(kv[0])):
+    if _vk not in (0x14, 0x90, 0x91) and _vk not in VK_NAMES and " " not in _name:
+        VK_NAMES[_vk] = {"return": "enter", "escape": "esc", "control": "ctrl", "del": "delete"}.get(_name, _name)
+for _vk, _name in ((0x0D, "enter"), (0x1B, "esc"), (0x2E, "delete"), (0x11, "ctrl"), (0x5B, "win"),
+                   (0x21, "pageup"), (0x22, "pagedown"), (0x2D, "insert"), (0x5D, "menu"), (0x2C, "printscreen"),
+                   (0xA0, "shift"), (0xA1, "shift"), (0xA2, "ctrl"), (0xA3, "ctrl"), (0xA4, "alt"), (0xA5, "alt"),
+                   (0x5C, "win")):
+    VK_NAMES[_vk] = _name
+MODIFIERS = ("ctrl", "shift", "alt", "win")
+
+
+def key_code(name):
+    """VK code for a key name, or None if Gem doesn't know it."""
+    if isinstance(name, int):
+        return name
+    return KEY_NAMES.get(str(name).strip().lower())
+
+
+def vk_name(vk):
+    """The name a macro uses for a VK code ("enter", "f5", "k"), or None."""
+    return VK_NAMES.get(vk)
+
+
+def parse_chord(text):
+    """'ctrl+shift+k' or 'ctrl shift k' -> ['ctrl', 'shift', 'k'] (modifiers first); None if a key is unknown."""
+    parts = []
+    for chunk in re.split(r"\s*\+\s*", (text or "").strip().lower()):
+        parts += [chunk] if key_code(chunk) is not None else chunk.split()
+    parts = [{"control": "ctrl", "windows": "win", "return": "enter", "escape": "esc"}.get(p, p) for p in parts if p]
+    if not parts or any(key_code(p) is None for p in parts):
+        return None
+    mods = [m for m in MODIFIERS if m in parts]
+    rest = [p for p in parts if p not in MODIFIERS]
+    if len(rest) > 1 or (not rest and len(mods) > 1):
+        return None
+    return mods + rest
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -93,7 +144,9 @@ def key_up(vk):
 
 def press(*names):
     """Press a chord like press("ctrl", "c") or a single key like press("next")."""
-    vks = [VK[n] if isinstance(n, str) and n in VK else (ord(n.upper()) if isinstance(n, str) else n) for n in names]
+    vks = [key_code(n) for n in names]
+    if None in vks:
+        raise ValueError("Unknown key in %r" % (names,))
     for vk in vks:
         key_down(vk)
     for vk in reversed(vks):
@@ -124,6 +177,76 @@ def type_text(text):
     for i in range(0, len(inputs), 200):
         _send(inputs[i:i + 200])
         time.sleep(0.01)
+
+
+def type_plain(text, soft_newlines=False):
+    """Type text without ever pressing Enter: line breaks become Shift+Enter (soft_newlines) or spaces."""
+    lines = re.split(r"\r\n|\r|\n", text or "")
+    for i, line in enumerate(lines):
+        if i:
+            if soft_newlines:
+                press("shift", "enter")
+            else:
+                type_text(" ")
+        if line:
+            type_text(line)
+
+
+# ── Mouse input ───────────────────────────────────────────────────────────────
+
+INPUT_MOUSE = 0
+MOUSE_FLAGS = {"left": (0x0002, 0x0004), "right": (0x0008, 0x0010), "middle": (0x0020, 0x0040)}
+user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+
+
+class _PhysicalDpi:
+    """Run the enclosed calls with physical-pixel coordinates, whatever the display scaling."""
+
+    def __enter__(self):
+        self.old = None
+        try:
+            user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+            user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+            self.old = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, *exc):
+        if self.old:
+            user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(self.old))
+
+
+def cursor_pos():
+    """Mouse position in physical pixels."""
+    pt = wt.POINT()
+    with _PhysicalDpi():
+        user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
+def click_at(x, y, button="left", double=False):
+    """Move the mouse to (x, y) in physical pixels and click there."""
+    down, up = MOUSE_FLAGS.get(button, MOUSE_FLAGS["left"])
+    with _PhysicalDpi():
+        user32.SetCursorPos(int(x), int(y))
+    time.sleep(0.05)
+    for _ in range(2 if double else 1):
+        for flag in (down, up):
+            inp = INPUT(type=INPUT_MOUSE)
+            inp.u.mi = MOUSEINPUT(0, 0, 0, flag, 0, 0)
+            _send([inp])
+        time.sleep(0.06)
+
+
+def window_at(x, y):
+    """The top-level window under a point in physical pixels (0 if none)."""
+    user32.WindowFromPhysicalPoint.restype = wt.HWND
+    user32.WindowFromPhysicalPoint.argtypes = [wt.POINT]
+    user32.GetAncestor.restype = wt.HWND
+    user32.GetAncestor.argtypes = [wt.HWND, wt.UINT]
+    hwnd = user32.WindowFromPhysicalPoint(wt.POINT(int(x), int(y)))
+    return user32.GetAncestor(hwnd, 2) if hwnd else 0      # GA_ROOT
 
 
 def toggle_state(vk):
@@ -259,6 +382,11 @@ def show_window(hwnd, cmd):
 
 def is_minimized(hwnd):
     return bool(user32.IsIconic(hwnd))
+
+
+def window_owner(hwnd):
+    """The window that owns this one (a dialog's app window), or 0."""
+    return user32.GetWindow(hwnd, 4) or 0                   # GW_OWNER
 
 
 def window_class(hwnd):

@@ -158,7 +158,13 @@ class Island(QWidget):
             seconds = 8.0 if (card or {}).get("done") else 45.0      # training: stay up while you read the line
         if kind == "trivia":
             seconds = 9.0 if (card or {}).get("done") else 40.0      # time to think
+        if kind == "macro":
+            seconds = 8.0
         seconds *= float((svc.config.get("appearance") or {}).get("card_seconds", 1.0) or 1.0)
+        if kind == "macro" and not (card or {}).get("done"):
+            seconds = 600.0                                           # the runner re-captions when it's done
+        if kind == "approve":
+            seconds = float((card or {}).get("seconds", 45))          # exactly as long as the request stays open
         self.card_until = time.monotonic() + seconds
         self.toast_until = 0.0
 
@@ -236,7 +242,8 @@ class Island(QWidget):
             return "toast"
         if self.interactive:
             return "hover"
-        if self.fullscreen and app.get("hide_in_fullscreen", True):
+        recording = bool(self.activity and self.activity["kind"] == "recording")    # shows even over fullscreen apps
+        if self.fullscreen and app.get("hide_in_fullscreen", True) and not recording:
             return "hidden"
         if self.activity:
             return "activity"
@@ -301,6 +308,11 @@ class Island(QWidget):
         act = None
         if st.in_call:
             act = {"kind": "call", "label": "On a call", "value": "quiet"}
+        if act is None and getattr(st, "macro_recording", 0):
+            act = {"kind": "recording", "label": "Recording macro",
+                   "value": _countdown(time.time() - st.macro_recording)}
+        if act is None and getattr(st, "macro_running", ""):
+            act = {"kind": "macro", "label": "Running " + st.macro_running, "value": ""}
         if act is None:
             try:
                 from ..skills import timers
@@ -349,7 +361,7 @@ class Island(QWidget):
             act = {"kind": "quiet", "label": "Quiet", "value": ("until " + until) if until else "say I'm back"}
         if act is None and st.gaming:
             act = {"kind": "gaming", "label": "Gaming", "value": ""}
-        if act and act["kind"] == "music":
+        if act and act["kind"] in ("music", "macro"):
             fm = QFontMetrics(F_ROW)
             act["label"] = fm.elidedText(act["label"], Qt.ElideRight, 220)
         self.activity = act
@@ -576,9 +588,13 @@ class Island(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(T.alpha(QColor(52, 211, 153), 0.7 + 0.3 * math.sin(self.t * 4)))
             p.drawEllipse(QPointF(ix, cy), 4.5, 4.5)
-        elif kind == "dictating":
+        elif kind in ("dictating", "recording"):
             p.setPen(Qt.NoPen)
             p.setBrush(T.alpha(QColor(248, 113, 113), 0.7 + 0.3 * math.sin(self.t * 4)))
+            p.drawEllipse(QPointF(ix, cy), 4.5, 4.5)
+        elif kind == "macro":
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(QColor(167, 139, 250), 0.7 + 0.3 * math.sin(self.t * 4)))
             p.drawEllipse(QPointF(ix, cy), 4.5, 4.5)
         elif kind == "music":
             p.setPen(Qt.NoPen)

@@ -258,7 +258,7 @@ class Overlay:
         m.addSeparator()
         m.addAction("Type a command…", self.open_command_bar_now)
         m.addAction("Open Gem", lambda: self._open_dashboard("home"))
-        m.addAction("Routines", lambda: self._open_dashboard("routines"))
+        m.addAction("Routines && macros", lambda: self._open_dashboard("routines"))
         m.addAction("Settings", lambda: self._open_dashboard("settings"))
         m.addSeparator()
         m.addAction("Quit Gem", lambda: svc.assistant.quit())

@@ -300,6 +300,47 @@ def locate(img, question, title=""):
     return str(out["answer"]).strip(), boxes, full
 
 
+POINT_AT = ("You are helping the user's assistant click something on their screen. The window in front is titled: "
+            "{title}. Find exactly this: {what}. The black band at the bottom of the image is padding; ignore it. "
+            "Reply with JSON only: {{\"found\": true, \"label\": \"the words on it, if any\", \"box\": [x1, y1, x2, "
+            "y2]}} with integers from 0 to 1000 across the whole image (0,0 top left, 1000,1000 bottom right), tight "
+            "around it. If it isn't clearly visible, or more than one thing fits, reply {{\"found\": false}}. Never "
+            "guess.")
+POINT_AT_TILED = ("You are helping the user's assistant click something on their screen. The window in front is "
+                  "titled: {title}. Find exactly this: {what}. You get the screen as {{n}} overlapping square pieces "
+                  "from left to right: image 1 is the leftmost part. Reply with JSON only: {{\"found\": true, "
+                  "\"label\": \"the words on it, if any\", \"image\": 1, \"box\": [x1, y1, x2, y2]}} where box "
+                  "coordinates are integers from 0 to 1000 across that piece (0,0 top left), tight around it. If it "
+                  "isn't clearly visible, or more than one thing fits, reply {{\"found\": false}}. Never guess.")
+
+
+def point_at(what):
+    """Where a described thing is on screen, for a macro to click it: (x, y in physical pixels, box 0..1 of the
+    monitor, monitor rect, label) or None if it isn't clearly there. Raises BrainUnavailable."""
+    img, title, monitor = grab(with_box=True, full=True)
+    out, _, to_box, full = look(img, what, POINT_AT_TILED.format(title=title or "unknown", what=what),
+                                POINT_AT.format(title=title or "unknown", what=what), max_tokens=150)
+    if not out or not out.get("found"):
+        return None
+    box = to_box(out)
+    if not box:
+        return None
+    model = (svc.config["ai"].get("vision_models") or ["qwen/qwen3.8-27b"])[0]
+    if not full and svc.brain.budget(model) >= REFINE_COST:
+        try:
+            box = refine(img, [(box, what)], "Where is " + what)[0][0]
+        except Exception:
+            log.debug("Refining a click target failed", exc_info=True)
+    try:
+        box = snap(img, box)
+    except Exception:
+        log.debug("Snapping a click target failed", exc_info=True)
+    w, h = monitor[2] - monitor[0], monitor[3] - monitor[1]
+    x = monitor[0] + (box[0] + box[2]) / 2 * w
+    y = monitor[1] + (box[1] + box[3]) / 2 * h
+    return int(x), int(y), box, monitor, str(out.get("label") or "")[:40]
+
+
 def _highlight_later(img, monitor, boxes, question, seconds, full_detail=False):
     """Sharpen the boxes, then draw them (the answer is already being spoken). The zoomed second look is only
     needed after a shrunk first look, and is skipped when the allowance is low, so it never costs your next question."""
