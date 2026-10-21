@@ -242,6 +242,7 @@ DEFAULTS = {
         "island_when_idle": True,             # keep the tiny pill at the top when nothing is happening
         "hide_in_fullscreen": True,           # tuck it away during fullscreen video and games
         "card_seconds": 1.0,                  # multiplier for how long answers stay on screen
+        "screen_highlights": True,            # outline what Gem is talking about when it looks at your screen
     },
 
     "sounds": {"cues": True},                 # soft tones when listening starts and stops

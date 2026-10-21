@@ -698,6 +698,33 @@ def _rules():
     def _(m, t):
         return Match("general_kenobi")
 
+    # Pointing at things on screen (Gem outlines them; you click)
+    @rule(r"^(?:where(?:'s| is| are) (?:the |my |this )?(.+?) on (?:my |the |this )?(?:screen|page|window)|"
+          r"show me where (?:the |my )?(.+?) is|point (?:to|at|out) (?:the |my )?(.+)|highlight (?:the |my )?(.+)|"
+          r"where do i (?:click|go|press|tap) (?:to |for )?(.+)|how do i (.+?) (?:here|on this page|in this app)|"
+          r"where(?:'s| is) (?:the |my )?(.+? (?:button|link|tab|icon|menu|setting|settings|option|field|box|bar|"
+          r"toggle|switch))(?: here)?)$")
+    def _(m, t):
+        what = next(g for g in m.groups() if g)
+        if re.search(r"\b(?:highlights?|outlines?|boxes)\b", what):
+            return None
+        return Match("explain_screen", {"question": _raw.strip() or t})
+
+    @rule(r"^(?:spotlight|focus on|focus) (?:this|the|my) (?:window|app)$|^(?:turn on |start )?(?:the )?spotlight"
+          r"(?: mode)?$|^dim everything (?:else|but this|except this(?: window)?)$|^help me focus(?: on this)?"
+          r"(?: window)?$|^spotlight on$")
+    def _(m, t):
+        return Match("spotlight", {"on": True})
+
+    @rule(r"^(?:turn off |stop |end |hide |close )(?:the )?spotlight(?: mode)?$|^spotlight off$|^stop dimming"
+          r"(?: the screen)?$|^undim(?: the screen)?$")
+    def _(m, t):
+        return Match("spotlight", {"on": False})
+
+    @rule(r"^(?:hide|clear|remove|get rid of) (?:the |those |that |these )?(?:highlights?|outlines?|boxes)$")
+    def _(m, t):
+        return Match("clear_highlights")
+
     # Files
     @rule(r"^(?:find|show(?: me)?|where(?:'s| is| are)|look for|search for|get|pull up|list) (?:me )?"
           r"(.*\b(?:pdfs?|photos?|pictures?|images?|screenshots?|videos?|songs?|documents?|docs?|presentations?|"

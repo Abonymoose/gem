@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QWidget
 from ..runtime import svc
 from ..state import ALWAYS_LISTENING, PUSH_TO_TALK
 from . import theme as T
+from .highlight import HighlightOverlay
 from .island import Island
 
 log = logging.getLogger("gem.overlay")
@@ -36,6 +37,8 @@ class Bridge(QObject):
     dashboard = Signal(str)
     quit = Signal()
     fx = Signal(str, float)
+    highlight = Signal(object)
+    spotlight = Signal(bool)
 
 
 class CommandBar(QWidget):
@@ -125,18 +128,21 @@ class Overlay:
         self.bridge = Bridge()
         self.bridge.show.connect(lambda d: self.island.show_card(d.get("you"), d.get("text"), d.get("card"),
                                                                   d.get("seconds")))
-        self.bridge.dismiss.connect(lambda: self.island.dismiss())
+        self.bridge.dismiss.connect(self._on_dismiss)
         self.bridge.suppress.connect(self._on_suppress)
         self.bridge.pulse.connect(lambda: self.island.pulse())
         self.bridge.command_bar.connect(self.open_command_bar_now)
         self.bridge.dashboard.connect(self._open_dashboard)
         self.bridge.quit.connect(self.app.quit)
         self.bridge.fx.connect(lambda kind, secs: self.island.play_fx(kind, secs))
+        self.bridge.highlight.connect(self._on_highlight)
+        self.bridge.spotlight.connect(self._on_spotlight)
 
         self.screen_geo = QGuiApplication.primaryScreen().geometry()
         QGuiApplication.primaryScreen().geometryChanged.connect(self._screen_changed)
         self.island = Island(self)
         self.bar = CommandBar(self)
+        self.highlights = HighlightOverlay()
         self.dashboard = None
         self.menu_open = False
 
@@ -157,6 +163,14 @@ class Overlay:
 
     def dismiss(self):
         self.bridge.dismiss.emit()
+
+    def highlight(self, monitor, boxes, seconds=9.0):
+        """Outline spots on screen (boxes: [((x1, y1, x2, y2) as 0..1 of the monitor, label)])."""
+        self.bridge.highlight.emit({"monitor": monitor, "boxes": boxes, "seconds": seconds})
+
+    def spotlight(self, on):
+        """Dim everything except the window in front (follows you) until turned off."""
+        self.bridge.spotlight.emit(bool(on))
 
     def suppress(self, seconds):
         """Hide right away (e.g. so screenshots don't include Gem)."""
@@ -187,6 +201,20 @@ class Overlay:
         self.island.suppress_until = time.monotonic() + seconds
         self.island.opacity = 0.0
         self.island.hide()
+        if self.highlights.isVisible():
+            self.highlights.hide_briefly(seconds)       # keep the dimming out of Gem's own screenshots
+
+    def _on_dismiss(self):
+        self.island.dismiss()
+        self.highlights.clear()
+
+    def _on_highlight(self, d):
+        self.highlights.show_highlights(d["monitor"], d["boxes"], d.get("seconds", 9.0))
+        self.island.raise_()                            # the island stays above the dimming
+
+    def _on_spotlight(self, on):
+        self.highlights.set_spotlight(on)
+        self.island.raise_()
 
     def open_command_bar_now(self):
         self.bar.open_bar(self.screen_geo.center().x(), self.screen_geo.top() + 40)

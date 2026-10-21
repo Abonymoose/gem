@@ -895,6 +895,7 @@ FIELDS = [
     ("Look & sound", "How long answers stay on screen", "appearance.card_seconds", "choice",
      [("Short", 0.7), ("Normal", 1.0), ("Long", 1.5), ("Extra long", 2.2)], False),
     ("Look & sound", "Sound cues when listening starts and stops", "sounds.cues", "bool", None, False),
+    ("Look & sound", "Outline what Gem talks about on screen", "appearance.screen_highlights", "bool", None, False),
     ("Look & sound", "Alarm and reminder sounds", "reminders.alarm_sound", "bool", None, False),
     ("Look & sound", "Keyboard light animation", "lights.animate", "bool", None, False),
     ("Look & sound", "Flash keyboard lights for alerts", "lights.flash_on_alerts", "bool", None, False),
