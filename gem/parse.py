@@ -78,6 +78,7 @@ def normalize_time_words(text):
     t = re.sub(r"(\d)\s?([ap])m\b", r"\1 \2m", t)
     t = t.replace("o'clock", "").replace("oclock", "")
     t = words_to_numbers(t)
+    t = re.sub(r"\b(\d+(?:\.\d+)?) (?:more|extra) (?=(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\b)", r"\1 ", t)
     # Clock phrases: "half past 7", "quarter to 8", "10 past 6", "at 20 to 9".
     t = re.sub(r"\bhalf (?:past|after) (\d{1,2})\b", r"\1:30", t)
     t = re.sub(r"\b(?:a )?quarter (?:past|after) (\d{1,2})\b", r"\1:15", t)

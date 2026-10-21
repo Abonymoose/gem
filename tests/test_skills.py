@@ -7,6 +7,7 @@ import unittest
 from . import svc  # noqa: F401  (sets up the test environment)
 from .test_router import route
 from gem import router
+from gem.config import runtime
 from gem.skills import ambient, timeline, timers
 
 NOW = datetime.datetime(2026, 10, 21, 20, 15)       # a Wednesday evening
@@ -70,6 +71,58 @@ class RepeatingReminderTest(unittest.TestCase):
         finally:
             timers.cancel_timer("drink water", kind="reminder")
         self.assertNotIn("drink water", timers.list_timers())
+
+
+class TimerControlsTest(unittest.TestCase):
+    def setUp(self):
+        timers.cancel_timer(all=True)
+        with runtime as data:
+            data.pop("timer_lengths", None)
+
+    tearDown = setUp
+
+    def test_nothing_running(self):
+        self.assertIsNone(route("5 more minutes"))
+        self.assertIsNone(route("pause the timer"))
+
+    def test_more_time_pause_resume(self):
+        timers.set_timer(minutes=10, label="pasta")
+        self.assertEqual(route("5 more minutes").args, {"seconds": 300})
+        self.assertEqual(route("another minute").args, {"seconds": 60})
+        self.assertFalse(route("5 more minutes").safe)                  # "I need 5 more minutes" to someone
+        self.assertNotEqual(getattr(route("remind me in 5 more minutes"), "action", None), "timer_adjust")
+        self.assertEqual(route("take 2 minutes off the timer").args, {"seconds": -120, "label": ""})
+        self.assertEqual(route("add 5 minutes to the pasta timer").args, {"seconds": 300, "label": "pasta"})
+
+        self.assertIn("15 minutes left", timers.timer_adjust(300))
+        self.assertEqual(route("pause the timer").action, "timer_pause")
+        self.assertIsNone(route("resume the timer"))                    # nothing paused yet
+        self.assertIn("Paused the pasta timer", timers.timer_pause(True))
+        t = timers._timer()
+        self.assertTrue(timers.paused(t))
+        frozen = timers.remaining(t)
+        self.assertGreater(t["at"], time.time() + 365 * 86400)          # parked: it can't go off while paused
+        self.assertIn("paused with", timers.list_timers())
+        self.assertIn("already paused", timers.timer_pause(True))
+        self.assertEqual(route("resume the timer").args, {"pause": False, "label": ""})
+        timers.timer_pause(False)
+        t = timers._timer()
+        self.assertFalse(timers.paused(t))
+        self.assertAlmostEqual(t["at"] - time.time(), frozen, delta=2)
+
+    def test_remembers_lengths(self):
+        self.assertIsNone(route("set a pasta timer"))                   # never used: the AI asks how long
+        timers.set_timer(minutes=12, label="pasta")
+        timers.cancel_timer(all=True)
+        for said in ("set a pasta timer", "pasta timer", "set a timer for pasta"):
+            with self.subTest(said=said):
+                self.assertEqual(route(said).args, {"label": "pasta"})
+        self.assertIn("12 minute timer for pasta", timers.set_timer(label="pasta"))
+
+    def test_cancel_by_name(self):
+        self.assertEqual(route("cancel the pasta timer").args["match"], "pasta")
+        self.assertEqual(route("stop the 10 minute timer").args["match"], "")
+        self.assertTrue(route("cancel both timers").args["all"])
 
 
 class AmbientRoutingTest(unittest.TestCase):

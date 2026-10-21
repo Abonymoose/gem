@@ -476,9 +476,10 @@ class CardContent:
         for i, it in enumerate(items):
             yy = y + i * 32
             if it["kind"] == "timer":
-                left = max(0.0, it["at"] - time.time())
+                frozen = it.get("paused_left")
+                left = frozen if frozen is not None else max(0.0, it["at"] - time.time())
                 draw_ring(p, x + 11, yy + 13, 9, left / max(1.0, it.get("total") or 1), 3)
-                right = _countdown(left)
+                right = ("Paused " if frozen is not None else "") + _countdown(left)
                 name = (it.get("label") or "Timer").capitalize()
             else:
                 draw_bell(p, x + 11, yy + 13, 16, T.SOFT)

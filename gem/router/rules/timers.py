@@ -1,9 +1,16 @@
 """Commands: Time, timers, alarms, reminders and the class schedule."""
 import re
 
-from ...parse import parse_duration, parse_when
+from ...config import runtime
+from ...parse import parse_duration, parse_when, words_to_numbers
 from ...skills import apps, timers
 from ..core import Match, said
+
+
+def _remembered_timer(label):
+    """A timer label used before ('pasta'), so 'set a pasta timer' can reuse its length; else None."""
+    label = re.sub(r"^(?:the|my|a|an)\s+", "", (label or "").strip())
+    return label if label and label in (runtime.data.get("timer_lengths") or {}) else None
 
 
 def register(rule):
@@ -27,7 +34,44 @@ def register(rule):
     @rule(r"^(?:set |start |make )?(?:an? |the )?timer (?:for|of|to)\s+(.+?)(?:\s+(?:called|named|for)\s+(.+))?$")
     def _(m, t):
         secs = parse_duration(m.group(1))
+        if not secs and not m.group(2) and _remembered_timer(m.group(1)):
+            return Match("set_timer", {"label": m.group(1)})       # "set a timer for pasta", like last time
         return Match("set_timer", {"seconds": secs, "label": m.group(2) or ""}) if secs else None
+
+    # Running timers: more time, less time, pause, resume
+    @rule(r"^(?:add|put) (?:another |an extra |on )?(.+?) (?:more )?(?:to|on) (?:the |my |that )?(?:(.+?) )?timer$|"
+          r"^take (.+?) off (?:the |my |that )?(?:(.+?) )?timer$")
+    def _(m, t):
+        secs = parse_duration(m.group(1) or m.group(3))
+        if not secs:
+            return None
+        return Match("timer_adjust", {"seconds": secs if m.group(1) else -secs, "label": m.group(2) or m.group(4) or ""})
+
+    @rule(r"\b(?:more|another|extra)\b", safe=False)
+    def _(m, t):
+        # "5 more minutes", "another minute", "add 2 more minutes": only while a timer is running.
+        tn = re.sub(r"\b(?:another|an extra|one more)\s+(?=(?:minute|hour|second)\b)", "1 ", words_to_numbers(t))
+        hit = re.fullmatch(r"(?:add |give (?:me|it) )?(?:another |an extra )?(\d+(?:\.\d+)?) (?:more |extra )?"
+                           r"((?:minute|min|second|sec|hour)s?)(?: more)?(?: (?:on|to) (?:it|that|the timer))?", tn)
+        if not hit or not timers._timer():
+            return None
+        return Match("timer_adjust", {"seconds": parse_duration(hit.group(1) + " " + hit.group(2))}, False)
+
+    @rule(r"^(pause|stop|hold|freeze|resume|unpause|continue|restart) (?:the |my |that )?(?:(.+?) )?timer(?: again)?$|"
+          r"^start (?:the |my )?(?:(.+?) )?timer again$")
+    def _(m, t):
+        verb, label = m.group(1), m.group(2) or m.group(3) or ""
+        if verb == "stop" or (verb == "restart" and not timers._timer(label, "paused")):
+            return None                                 # "stop the timer" cancels it (below)
+        pause = verb in ("pause", "hold", "freeze")
+        if not timers._timer(label, "running" if pause else "paused"):
+            return None
+        return Match("timer_pause", {"pause": pause, "label": label})
+
+    @rule(r"^(?:set |start |make |put on )?(?:an? |the |my )?(.+?) timer$")
+    def _(m, t):
+        label = _remembered_timer(m.group(1))
+        return Match("set_timer", {"label": label}) if label else None
 
     @rule(r"^how (?:much time|long) (?:is )?(?:left|remaining)(?: on (?:my |the )?(.+?) ?timer)?$|"
           r"^time left(?: on (?:my |the )?timer)?$")
@@ -36,11 +80,14 @@ def register(rule):
             return Match("focus_status")
         return Match("time_left", {"label": m.group(1) or ""})
 
-    @rule(r"^(?:cancel|stop|delete|remove|clear|turn off) (?:all )?(?:the |my )?(timer|alarm|reminder)s?"
-          r"(?: (?:for|called|about|to) (.+))?$", safe=False)
+    @rule(r"^(?:cancel|stop|delete|remove|clear|turn off|kill) (?:all )?(?:the |my |that )?(?:(.+?) )?"
+          r"(timer|alarm|reminder)s?(?: (?:for|called|about|to) (.+))?$", safe=False)
     def _(m, t):
-        return Match("cancel_timer", {"kind": m.group(1), "match": m.group(2) or "",
-                                      "all": " all " in " " + t + " "}, False)
+        name = m.group(1) or m.group(3) or ""
+        if parse_duration(name) or name in ("all", "all the", "all my", "every", "both", "both the"):
+            name = ""                                   # "the 10 minute timer": the one that's running
+        return Match("cancel_timer", {"kind": m.group(2), "match": name,
+                                      "all": bool(re.search(r"\b(?:all|every|both)\b", t))}, False)
 
     @rule(r"^(?:what are|list|show|read|tell me) (?:all )?(?:my |the )?(?:timers|alarms|reminders)$|"
           r"^do i have any (?:timers|alarms|reminders)$|^(?:my )?(?:timers|alarms|reminders)$")

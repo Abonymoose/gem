@@ -17,7 +17,7 @@ import webbrowser
 
 from ..actions import ActionError, action
 from ..cards import card
-from ..config import PROJECT_DIR, JsonStore
+from ..config import PROJECT_DIR, JsonStore, runtime
 from ..parse import WEEKDAYS, clock_phrase, duration_phrase, normalize_time_words, parse_duration, parse_when
 from ..runtime import caption, notify, svc
 from ..winapi import idle_seconds
@@ -71,13 +71,28 @@ def _remove(ids):
         data["items"] = [i for i in data["items"] if i["id"] not in ids]
 
 
+PAUSED_AT = 4102444800.0       # 2100: where a paused timer is parked so it never goes off
+
+
+def remaining(item, now=None):
+    """Seconds left on a timer, frozen while it's paused."""
+    if item.get("paused_left") is not None:
+        return item["paused_left"]
+    return max(0.0, item["at"] - (now or time.time()))
+
+
+def paused(item):
+    return item.get("paused_left") is not None
+
+
 def _describe(item, now=None):
     now = now or datetime.datetime.now()
     at = datetime.datetime.fromtimestamp(item["at"])
     if item["kind"] == "timer":
-        left = max(0, item["at"] - time.time())
-        name = (item["label"] + " timer") if item["label"] else "a timer"
-        return "%s with %s left" % (name, duration_phrase(left))
+        name = "a %s timer" % item["label"] if item["label"] else "a timer"
+        if paused(item):
+            return "%s, paused with %s left" % (name, duration_phrase(remaining(item)))
+        return "%s with %s left" % (name, duration_phrase(remaining(item)))
     if item["kind"] == "alarm":
         return "an alarm%s at %s" % (" for " + item["label"] if item["label"] else "", clock_phrase(at, now))
     if item["kind"] == "command":
@@ -122,8 +137,15 @@ def set_timer(minutes=0, seconds=0, label=""):
         total = float(minutes or 0) * 60 + float(seconds or 0)
     except (TypeError, ValueError):
         total = parse_duration("%s %s" % (minutes, seconds)) or 0
+    label = (label or "").strip()
+    lengths = runtime.data.get("timer_lengths") or {}
+    if total <= 0 and label.lower() in lengths:
+        total = lengths[label.lower()]                      # "set a pasta timer": as long as last time
     if total <= 0:
         raise ActionError("How long should the timer be?")
+    if label:
+        with runtime as data:
+            data.setdefault("timer_lengths", {})[label.lower()] = total
     item = _add("timer", datetime.datetime.now() + datetime.timedelta(seconds=total), label=label)
     size = re.sub(r"\b(hour|minute|second)s\b", r"\1", duration_phrase(total)).capitalize()   # "2 minute timer"
     text = "%s timer started." % size if not label else "%s timer for %s started." % (size, label)
@@ -245,22 +267,86 @@ def list_timers():
     descs = [_describe(i, now) for i in items[:6]]
     more = " and %d more" % (len(items) - 6) if len(items) > 6 else ""
     rows = [{"kind": i["kind"], "label": i["label"], "message": i["message"], "at": i["at"],
-             "total": i["at"] - i["created"]} for i in items]
+             "total": i.get("total") or i["at"] - i["created"], "paused_left": i.get("paused_left")} for i in items]
     return card("timers", "You have " + ", ".join(descs) + more + ".", items=rows)
+
+
+def _timer(label="", state=None):
+    """The timer a request is about: the one whose label matches, else the soonest. state: 'running'/'paused'."""
+    timers = [t for t in _items("timer") if state is None or paused(t) == (state == "paused")]
+    if label:
+        timers = [t for t in timers if label.lower() in t["label"].lower()] or timers
+    return timers[0] if timers else None
+
+
+def _timer_name(t):
+    return "the %s timer" % t["label"] if t["label"] else "the timer"
 
 
 @action("time_left", "How long is left on a timer.", "label?: str", ai=False)
 def time_left(label=""):
-    timers = _items("timer")
-    if label:
-        timers = [t for t in timers if label.lower() in t["label"].lower()] or timers
-    if not timers:
+    t = _timer(label)
+    if not t:
         return "No timers are running."
-    t = timers[0]
-    left = max(0, t["at"] - time.time())
-    return card("timer", "%s left%s." % (duration_phrase(left - left % 60 if left > 90 else left).capitalize(),
-                                         " on the " + t["label"] + " timer" if t["label"] else ""),
-                label=t["label"], ends_at=t["at"], total=t["at"] - t["created"])
+    left = remaining(t)
+    said = duration_phrase(left - left % 60 if left > 90 else left).capitalize()
+    if paused(t):
+        return "%s left on %s. It's paused." % (said, _timer_name(t))
+    return card("timer", "%s left%s." % (said, " on the " + t["label"] + " timer" if t["label"] else ""),
+                label=t["label"], ends_at=t["at"], total=t.get("total") or t["at"] - t["created"])
+
+
+@action("timer_adjust", "Add time to a running timer, or take some off (negative seconds).", "seconds: number, label?: str")
+def timer_adjust(seconds=0, label=""):
+    t = _timer(label)
+    if not t:
+        raise ActionError("No timers are running.")
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        raise ActionError("How much time?")
+    now = time.time()
+    with store as data:
+        for i in data["items"]:
+            if i["id"] == t["id"]:
+                if paused(i):
+                    i["paused_left"] = max(1.0, i["paused_left"] + seconds)
+                    i["total"] = max(i.get("total") or 0, i["paused_left"])
+                else:
+                    i["at"] = max(now + 1, i["at"] + seconds)
+                    i["total"] = max((i.get("total") or t["at"] - t["created"]) + seconds, i["at"] - now)
+                t = dict(i)
+    change = "Added %s" % duration_phrase(seconds) if seconds > 0 else "Took %s off" % duration_phrase(-seconds)
+    text = "%s. %s left on %s." % (change, duration_phrase(remaining(t)).capitalize(), _timer_name(t))
+    if paused(t):
+        return text
+    return card("timer", text, label=t["label"], ends_at=t["at"], total=t["total"])
+
+
+@action("timer_pause", "Pause a running timer, or resume a paused one (pause=false).", "pause?: bool, label?: str")
+def timer_pause(pause=True, label=""):
+    t = _timer(label, "running" if pause else "paused")
+    if not t:
+        other = _timer(label)
+        if other:
+            return "%s is already %s." % (_timer_name(other).capitalize(), "paused" if pause else "running")
+        raise ActionError("No timers are running.")
+    now = time.time()
+    with store as data:
+        for i in data["items"]:
+            if i["id"] != t["id"]:
+                continue
+            if pause:
+                i["total"] = i.get("total") or i["at"] - i["created"]
+                i["paused_left"] = max(1.0, i["at"] - now)
+                i["at"] = PAUSED_AT
+            else:
+                i["at"] = now + i.pop("paused_left")
+            t = dict(i)
+    if pause:
+        return "Paused %s with %s left." % (_timer_name(t), duration_phrase(remaining(t)))
+    return card("timer", "Resumed %s. %s left." % (_timer_name(t), duration_phrase(remaining(t)).capitalize()),
+                label=t["label"], ends_at=t["at"], total=t["total"])
 
 
 @action("cancel_timer", "Cancel a timer, alarm or reminder.", "match?: str, kind?: timer|alarm|reminder, all?: bool")

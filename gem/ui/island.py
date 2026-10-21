@@ -308,10 +308,12 @@ class Island(QWidget):
             except Exception:
                 running = []
             if running:
-                it = running[0]
-                total = max(1.0, it["at"] - it["created"])
-                act = {"kind": "timer", "label": (it["label"] or "Timer").capitalize(),
-                       "value": _countdown(it["at"] - time.time()), "progress": (it["at"] - time.time()) / total}
+                it = running[0]                         # soonest first; paused ones sort last
+                total = max(1.0, it.get("total") or it["at"] - it["created"])
+                left = timers.remaining(it)
+                name = (it["label"] or "Timer").capitalize()
+                act = {"kind": "timer", "label": name + (" · paused" if timers.paused(it) else ""),
+                       "value": _countdown(left), "progress": left / total}
         if act is None:
             try:
                 from ..skills import timers

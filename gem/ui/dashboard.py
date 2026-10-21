@@ -129,6 +129,12 @@ def _left(ts):
     return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
 
 
+def _timer_left(item):
+    """Time left on a timer, alarm or reminder; frozen for a paused timer."""
+    from ..skills import timers
+    return _left(time.time() + timers.remaining(item)) if timers.paused(item) else _left(item["at"])
+
+
 # ── Small widgets ────────────────────────────────────────────────────────────
 
 class Toggle(QAbstractButton):
@@ -416,7 +422,7 @@ class HomePage(Page):
             rows.append(("Class", nxt.rstrip(".")))
         for it in timers._items()[:4]:
             what = (it.get("message") or it.get("label") or it["kind"]).capitalize()
-            when = _left(it["at"]) + " left" if it["kind"] == "timer" else _when(it["at"])
+            when = _timer_left(it) + " left" if it["kind"] == "timer" else _when(it["at"])
             rows.append((it["kind"].capitalize(), "%s · %s" % (what, when)))
         if not rows:
             rows.append(("", "Nothing coming up."))
@@ -497,7 +503,8 @@ class RemindersPage(Page):
             what = it.get("message") or it.get("label") or "-"
             if it.get("repeat_minutes"):
                 what += "  (every %g min)" % it["repeat_minutes"]
-            for c, val in enumerate((it["kind"].capitalize(), what, _when(it["at"]), _left(it["at"]))):
+            due = "Paused" if timers.paused(it) else _when(it["at"])
+            for c, val in enumerate((it["kind"].capitalize(), what, due, _timer_left(it))):
                 self.table.setItem(r, c, QTableWidgetItem(val))
             self.table.setCellWidget(r, 4, cell_button("Cancel", lambda _=False, i=it["id"]: self._cancel(i)))
             self._ids.append(it["id"])
@@ -516,7 +523,7 @@ class RemindersPage(Page):
         for r, it in enumerate(items):
             cell = self.table.item(r, 3)
             if cell:
-                cell.setText(_left(it["at"]))
+                cell.setText(_timer_left(it))
 
 
 class ClassesPage(Page):
