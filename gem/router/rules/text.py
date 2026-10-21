@@ -1,8 +1,31 @@
 """Commands: Text tools and dictation."""
-from ..core import Match, _source, _THIS
+import re
+
+from ..core import Match, _source, _THIS, said
 
 
 def register(rule):
+    # Word count and spelling (both answered on the PC)
+    @rule(r"^(?:how many (?:words|characters|letters)(?: are there| are| is)?(?: in)?|word count(?: of| for)?|"
+          r"count (?:the )?words(?: in)?|how long is)(?: %s)?(?: (?:my|the) (?:essay|text|paragraph|document|story))?"
+          r"(?: selection| essay| paragraph| text)?$|^(?:what's|what is) the (?:word|character) count(?: of %s)?$"
+          % (_THIS, _THIS), safe=False)
+    def _(m, t):
+        if t.startswith("how long is") and not re.search(r"\b(?:this|that|it|selection|essay|text|paragraph)\b", t):
+            return None
+        return Match("text_stats", {"source": _source(m.group(1) or m.group(2) or "")}, False)
+
+    @rule(r"^(?:how (?:do|would|should) (?:you|i|we|one) spell|how (?:is|do you say|are you meant to write) (.+?) "
+          r"(?:spelled|spelt)|spell(?: the word| out)?|what's the spelling of|what is the spelling of) ?(.*)$",
+          safe=False)
+    def _(m, t):
+        word = (m.group(1) or m.group(2) or "").strip()
+        word = re.sub(r"^(?:the word|the name)\s+", "", word)
+        if not word or len(word.split()) > 3 or word in ("it", "that", "this") or word.startswith("check"):
+            return None                                 # "spell check this" is a grammar fix
+        raw = re.search(re.escape(word).replace(r"\ ", r"[\s,]+"), said(), re.I)   # keep capitals: "Aarav"
+        return Match("spell", {"word": raw.group(0) if raw else word}, False)
+
     # Text tools and dictation
     @rule(r"^(?:start |begin |turn on )?(?:dictation|dictating|dictate)(?: mode)?$|"
           r"^(?:type|write) (?:this|what i say)(?: down)?$|^take dictation$", safe=False)
@@ -17,7 +40,8 @@ def register(rule):
     def _(m, t):
         return Match("text_tool", {"task": "explain", "source": _source(m.group(1))}, False)
 
-    @rule(r"^(?:fix (?:the )?(?:grammar|spelling)(?: (?:in|of) %s)?|proofread %s|correct %s)$" % (_THIS, _THIS, _THIS),
+    @rule(r"^(?:fix (?:the )?(?:grammar|spelling)(?: (?:in|of) %s)?|proofread %s|correct %s|spell ?check(?: %s)?)$"
+          % (_THIS, _THIS, _THIS, _THIS),
           safe=False)
     def _(m, t):
         return Match("text_tool", {"task": "fix_grammar"}, False)

@@ -8,7 +8,7 @@ from . import svc  # noqa: F401  (sets up the test environment)
 from .test_router import route
 from gem import router
 from gem.config import runtime
-from gem.skills import ambient, timeline, timers
+from gem.skills import ambient, text, timeline, timers
 
 NOW = datetime.datetime(2026, 10, 21, 20, 15)       # a Wednesday evening
 
@@ -123,6 +123,32 @@ class TimerControlsTest(unittest.TestCase):
         self.assertEqual(route("cancel the pasta timer").args["match"], "pasta")
         self.assertEqual(route("stop the 10 minute timer").args["match"], "")
         self.assertTrue(route("cancel both timers").args["all"])
+
+
+class TextToolsTest(unittest.TestCase):
+    def test_count(self):
+        sample = "Hello world. It's a nice day!\n\nA new paragraph, with e.g. 3.5 well-known words."
+        c = text.count_text(sample)
+        self.assertEqual((c["words"], c["paragraphs"]), (14, 2))       # "it's", "e.g.", "3.5", "well-known": one each
+        self.assertEqual((c["chars"], c["chars_no_spaces"]), (len(sample), len(sample.replace(" ", "").replace("\n", ""))))
+
+    def test_spell(self):
+        self.assertEqual(text.spell_out("necessary"), "N, E, C, E, double S, A, R, Y")
+        self.assertEqual(text.spell_out("don't"), "D, O, N, apostrophe, T")
+        self.assertTrue(text.spell("rhythm").startswith("Rhythm is spelled R, H, Y, T, H, M."))
+
+    def test_routes(self):
+        for said in ("how many words is this", "how many words are in this", "word count", "count the words",
+                     "what's the word count", "how long is this essay", "word count of my clipboard"):
+            with self.subTest(said=said):
+                self.assertEqual(route(said).action, "text_stats")
+        self.assertEqual(route("word count of my clipboard").args["source"], "clipboard")
+        self.assertIsNone(route("how long is the movie"))
+        for said, word in (("how do you spell necessary", "necessary"), ("how is Massachusetts spelled", "Massachusetts"),
+                           ("spell the word accommodate", "accommodate"), ("how do you spell Aarav", "Aarav")):
+            with self.subTest(said=said):
+                self.assertEqual(route(said).args, {"word": word})
+        self.assertEqual(route("spell check this").action, "text_tool")
 
 
 class AmbientRoutingTest(unittest.TestCase):

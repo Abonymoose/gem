@@ -4,6 +4,7 @@ import re
 import time
 
 from ..actions import ActionError, action
+from ..cards import card
 from ..runtime import svc
 from ..winapi import copy_selection, get_clipboard, paste_text, press, release_modifiers, set_clipboard, type_text
 
@@ -64,6 +65,65 @@ def _text_task(task, instruction, text, output):
         return "Done, it's on your clipboard."
     paste_text(result)
     return None
+
+
+def count_text(text):
+    """Words, characters (with and without spaces), sentences, paragraphs and minutes to read."""
+    words = len(re.findall(r"[^\W_]+(?:['’.-][^\W_]+)*", text))
+    return {"words": words, "chars": len(text), "chars_no_spaces": len(re.sub(r"\s", "", text)),
+            "sentences": len(re.findall(r"[^.!?]*[^\W_][^.!?]*(?:[.!?]+|$)", text.strip())),
+            "paragraphs": len([p for p in re.split(r"\n\s*\n", text) if p.strip()]),
+            "read_minutes": words / 230.0}
+
+
+@action("text_stats", "Word count (and characters, reading time) of the selected text or clipboard. Local.",
+        "source?: selection|clipboard")
+def text_stats(source="auto"):
+    text = copy_selection() if source != "clipboard" else ""
+    if not (text or "").strip() and source in ("auto", "clipboard", None, ""):
+        text = get_clipboard()
+    text = (text or "").strip()
+    if not text:
+        raise ActionError("Select some text first, or copy it.")
+    c = count_text(text)
+    n = "{:,}".format(c["words"])
+    words = "%s word%s" % (n, "" if c["words"] == 1 else "s")
+    reading = "under a minute to read" if c["read_minutes"] < 1 else "about %d minute%s to read" % (
+        round(c["read_minutes"]), "" if round(c["read_minutes"]) == 1 else "s")
+    detail = "{:,} characters ({:,} without spaces)".format(c["chars"], c["chars_no_spaces"])
+    if c["paragraphs"] > 1:
+        detail += ", %d paragraphs" % c["paragraphs"]
+    return card("calc", "%s, %s, %s." % (words.capitalize(), detail, reading),
+                expression="%s · %s" % (detail, reading), result=words)
+
+
+def spell_out(word):
+    """'necessary' -> 'N, E, C, E, double S, A, R, Y'."""
+    letters, out, i = [ch for ch in word if ch.isalpha() or ch in "'-"], [], 0
+    while i < len(letters):
+        ch = letters[i]
+        if ch == "'":
+            out.append("apostrophe")
+        elif ch == "-":
+            out.append("hyphen")
+        elif i + 1 < len(letters) and letters[i + 1].lower() == ch.lower():
+            out.append("double " + ch.upper())
+            i += 1
+        else:
+            out.append(ch.upper())
+        i += 1
+    return ", ".join(out)
+
+
+@action("spell", "Spell a word out letter by letter.", "word: str")
+def spell(word=""):
+    word = (word or "").strip(" .?!\"")
+    if not word or len(word) > 40:
+        raise ActionError("Which word?")
+    words = word.split()
+    spoken = "; ".join(spell_out(w) for w in words)
+    return card("calc", "%s is spelled %s." % (word[:1].upper() + word[1:], spoken), expression="How to spell it",
+                result=" ".join(w.upper() for w in words) if len(word) <= 18 else word)
 
 
 @action("type_text", "Type text into the focused app.", "text: str")
