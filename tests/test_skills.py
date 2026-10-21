@@ -1,11 +1,75 @@
 """Skills whose logic can be checked without a PC: the timeline, ambient sound routing, reminders."""
+import datetime
 import threading
 import time
 import unittest
 
 from . import svc  # noqa: F401  (sets up the test environment)
 from .test_router import route
-from gem.skills import ambient, timeline
+from gem import router
+from gem.skills import ambient, timeline, timers
+
+NOW = datetime.datetime(2026, 10, 21, 20, 15)       # a Wednesday evening
+
+
+class RepeatingReminderTest(unittest.TestCase):
+    def parse(self, said):
+        msg, at, every = timers.parse_repeat(router.normalize(said)[0], NOW)
+        return msg, at.strftime("%a %H:%M") if at else None, every
+
+    def test_parse(self):
+        cases = {
+            "remind me to drink water every hour": ("drink water", None, 60),
+            "remind me every 30 minutes to stretch": ("stretch", None, 30),
+            "remind me to stretch every half hour": ("stretch", None, 30),
+            "remind me hourly to drink water": ("drink water", None, 60),
+            "remind me to take my meds every day at 9 am": ("take your meds", "Thu 09:00", 1440),
+            "every morning remind me to check my email": ("check your email", "Thu 08:00", 1440),
+            "remind me every night to set an alarm": ("set an alarm", "Wed 21:00", 1440),
+            "remind me to call grandma every sunday": ("call grandma", "Sun 09:00", 10080),
+            "remind me to take out the trash every monday at 7 pm": ("take out the trash", "Mon 19:00", 10080),
+            "remind me to water the plants every 2 days": ("water the plants", None, 2880),
+        }
+        for said, expected in cases.items():
+            with self.subTest(said=said):
+                self.assertEqual(self.parse(said), expected)
+
+    def test_not_repeating(self):
+        self.assertIsNone(timers.parse_repeat("remind me to check every file in 10 minutes", NOW))
+        m = route("remind me to check every file in 10 minutes")
+        self.assertEqual(m.args["message"], "check every file")
+        self.assertNotIn("repeat_minutes", m.args)
+
+    def test_routes(self):
+        m = route("remind me to drink water every hour")
+        self.assertEqual((m.action, m.args["repeat_minutes"], m.args["message"]), ("set_reminder", 60, "drink water"))
+
+    def test_keeps_its_slot(self):
+        nine = datetime.datetime(2026, 10, 21, 9, 0)
+        item = {"at": nine.timestamp(), "repeat_minutes": 1440}
+        # Went off late at 11:20 (PC was asleep): tomorrow is still 9:00.
+        self.assertEqual(timers.next_repeat(item, nine.replace(hour=11, minute=20)), nine + datetime.timedelta(days=1))
+        # Gem was off for three days: the next 9:00 after now.
+        self.assertEqual(timers.next_repeat(item, nine + datetime.timedelta(days=3, hours=1)),
+                         nine + datetime.timedelta(days=4))
+        hourly = {"at": nine.timestamp(), "repeat_minutes": 60}
+        self.assertEqual(timers.next_repeat(hourly, nine), nine + datetime.timedelta(hours=1))
+
+    def test_every_phrase(self):
+        self.assertEqual(timers.every_phrase(60), "hour")
+        self.assertEqual(timers.every_phrase(30), "30 minutes")
+        self.assertEqual(timers.every_phrase(1440), "day")
+        self.assertEqual(timers.every_phrase(2880), "2 days")
+        self.assertEqual(timers.every_phrase(90), "1 hour and 30 minutes")
+
+    def test_set_and_list(self):
+        reply = timers.set_reminder("drink water", repeat_minutes=60)
+        self.assertIn("every hour", reply)
+        try:
+            self.assertIn("a reminder to drink water every hour, next at", timers.list_timers())
+        finally:
+            timers.cancel_timer("drink water", kind="reminder")
+        self.assertNotIn("drink water", timers.list_timers())
 
 
 class AmbientRoutingTest(unittest.TestCase):

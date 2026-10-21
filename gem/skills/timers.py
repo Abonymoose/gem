@@ -7,6 +7,7 @@ and light flash during calls, snooze or gaming.
 import datetime
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -81,7 +82,36 @@ def _describe(item, now=None):
         return "an alarm%s at %s" % (" for " + item["label"] if item["label"] else "", clock_phrase(at, now))
     if item["kind"] == "command":
         return "%s at %s" % (item["message"], clock_phrase(at, now))
+    if item.get("repeat_minutes"):
+        return "a reminder to %s every %s, next at %s" % (item["message"], every_phrase(item["repeat_minutes"]),
+                                                          clock_phrase(at, now))
     return "a reminder to %s at %s" % (item["message"], clock_phrase(at, now))
+
+
+def next_repeat(item, now=None):
+    """When a repeating item is next due after now. It keeps its slot (a daily 9 AM reminder stays at 9 even if it
+    went off late because the PC was asleep), counted in local time so clock changes don't shift it."""
+    now = now or datetime.datetime.now()
+    step = datetime.timedelta(minutes=item["repeat_minutes"])
+    nxt = datetime.datetime.fromtimestamp(item["at"]) + step
+    if nxt <= now:
+        nxt += step * math.ceil((now - nxt) / step)
+        if nxt <= now:
+            nxt += step
+    return nxt
+
+
+def every_phrase(minutes):
+    """60 -> 'hour', 90 -> '1 hour and 30 minutes', 1440 -> 'day', 10080 -> 'week'."""
+    minutes = float(minutes)
+    names = {60: "hour", 1440: "day", 10080: "week"}
+    if minutes in names:
+        return names[minutes]
+    if minutes % 10080 == 0:
+        return "%d weeks" % (minutes // 10080)
+    if minutes % 1440 == 0:
+        return "%d days" % (minutes // 1440)
+    return duration_phrase(minutes * 60)
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────
@@ -134,8 +164,8 @@ def set_reminder(message="", time=None, minutes=None, repeat_minutes=None):
                 if i["id"] == item["id"]:
                     i["repeat_minutes"] = repeat
         return card("alarm", "I'll remind you to %s every %s, starting at %s." % (
-            message, duration_phrase(repeat * 60), clock_phrase(at)), title="Repeating reminder", at=at.timestamp(),
-            subtitle="%s · every %s" % (message.capitalize(), duration_phrase(repeat * 60)))
+            message, every_phrase(repeat), clock_phrase(at)), title="Repeating reminder", at=at.timestamp(),
+            subtitle="%s · every %s" % (message.capitalize(), every_phrase(repeat)))
     return card("alarm", "I'll remind you to %s at %s." % (message, clock_phrase(at)), title="Reminder",
                 at=at.timestamp(), subtitle=message.capitalize())
 
@@ -146,6 +176,54 @@ def parse_reminder(text):
     at, _ = parse_when(t)
     if not at:
         return None
+    msg = _reminder_message(t)
+    return (msg, at) if msg else None
+
+
+_EVERY = re.compile(r"\bevery\s+(?:(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|days?|weeks?)\b|"
+                    r"(half (?:an )?hour|hour|day|morning|evening|night|week|%s)\b)|\b(hourly|daily|nightly|weekly)\b"
+                    % "|".join(WEEKDAYS))
+_DEFAULT_HOUR = {"morning": 8, "evening": 19, "night": 21, "nightly": 21}
+
+
+def parse_repeat(text, now=None):
+    """'remind me to drink water every hour' -> ('drink water', first time or None, 60.0), or None.
+
+    Understands every N minutes/hours/days/weeks, every half hour, hourly, daily, every morning/evening/night
+    (8 AM, 7 PM, 9 PM unless a time is said) and every Monday (at 9 AM unless a time is said). With no first
+    time, the first reminder comes one repeat from now.
+    """
+    now = now or datetime.datetime.now()
+    t = normalize_time_words(text)
+    m = _EVERY.search(t)
+    if not m:
+        return None
+    n, unit, word, adverb = m.groups()
+    word = word or adverb
+    if unit:
+        repeat = float(n) * {"h": 60, "m": 1, "d": 1440, "w": 10080}[unit[0]]
+    elif word.startswith("half"):
+        repeat = 30.0
+    else:
+        repeat = {"hour": 60.0, "hourly": 60.0, "week": 10080.0, "weekly": 10080.0}.get(word, 1440.0)
+    rest = (t[:m.start()] + " " + t[m.end():]).strip()
+    if word in WEEKDAYS:
+        repeat = 10080.0
+        at, _ = parse_when("on %s %s" % (word, rest), now)
+        if not at:
+            at, _ = parse_when("on %s at 9 am" % word, now)
+    else:
+        at, _ = parse_when(rest, now)
+        if not at and word in _DEFAULT_HOUR:
+            at, _ = parse_when("at %d:00" % _DEFAULT_HOUR[word], now)
+    if repeat < 1:
+        return None
+    msg = _reminder_message(rest)
+    return (msg, at, repeat) if msg else None
+
+
+def _reminder_message(t):
+    """What to be reminded about, from normalized speech with the time words still in it."""
     msg = re.sub(r"^.*?\bremind me\b\s*", "", t)
     msg = re.sub(r"\b(?:in|after)\s+(?:\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\s*(?:and\s*)?)+", "", msg)
     msg = re.sub(r"(?:\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)\s*)+from now", "", msg)
@@ -155,10 +233,7 @@ def parse_reminder(text):
     msg = re.sub(r"^\s*(?:to|about|that|of)\s+", "", msg.strip())
     msg = re.sub(r"\s+(?:to|at|on|by)$", "", msg.strip())
     msg = re.sub(r"\s+", " ", msg).strip(" ,.")
-    if not msg:
-        return None
-    msg = re.sub(r"\bmy\b", "your", msg)
-    return msg, at
+    return re.sub(r"\bmy\b", "your", msg) if msg else None
 
 
 @action("list_timers", "List timers, alarms and reminders.")
@@ -447,8 +522,7 @@ class Scheduler:
 
     @staticmethod
     def _reschedule(item):
-        nxt = _add(item["kind"], datetime.datetime.now() + datetime.timedelta(minutes=item["repeat_minutes"]),
-                   label=item["label"], message=item["message"], url=item.get("url"))
+        nxt = _add(item["kind"], next_repeat(item), label=item["label"], message=item["message"], url=item.get("url"))
         with store as data:
             for i in data["items"]:
                 if i["id"] == nxt["id"]:

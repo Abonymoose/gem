@@ -76,6 +76,11 @@ def register(rule):
 
     @rule(r"\bremind me\b", safe=False)
     def _(m, t):
+        repeating = timers.parse_repeat(t)
+        if repeating:
+            msg, at, every = repeating
+            return Match("set_reminder", {"message": msg, "time": at.isoformat() if at else None,
+                                          "repeat_minutes": every}, False)
         parsed = timers.parse_reminder(t)
         if not parsed:
             return None
