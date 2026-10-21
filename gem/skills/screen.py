@@ -231,52 +231,73 @@ def _pieces(img):
     return [(int(round(i * step)), img.crop((int(round(i * step)), 0, int(round(i * step)) + H, H))) for i in range(n)]
 
 
-def locate(img, question, title=""):
-    """First look: (spoken answer, boxes as [((x1, y1, x2, y2) 0..1 of img, label)], full_detail).
-    Uses full-detail pieces when the allowance allows, otherwise one shrunk picture."""
+def look(img, question, tiled_prompt, single_prompt, max_tokens=500):
+    """Ask the vision model about the screen: full-detail pieces when the allowance allows, else one picture.
+    Returns (parsed JSON dict or None, raw text, to_box(item) -> (x1, y1, x2, y2) 0..1 of img or None, full_detail).
+    Prompts are already formatted except {n} (how many pieces) in the tiled one."""
     from ..brain import _parse_json
     W, H = img.size
     model = (svc.config["ai"].get("vision_models") or ["qwen/qwen3.8-27b"])[0]
     pieces = _pieces(img)
-    raw = None
     # Full detail costs about twice the daily allowance of one picture; past ~60% of the day's cap, save it.
     daily_ok = svc.brain.used_today(model) < float(svc.config["ai"].get("vision_daily_tokens", 200000)) * 0.6
     if len(pieces) > 1 and daily_ok and svc.brain.budget(model) >= TILES_COST:
-        prompt = TILED.format(title=title or "unknown", facts=_facts(), n=len(pieces))
         urls = []
         for _, piece in pieces:
             p = piece.copy()
             p.thumbnail((1080, 1080))
             urls.append(data_url(p))
         try:
-            raw = svc.brain.see(prompt, question, urls, max_tokens=500)
+            raw = svc.brain.see(tiled_prompt.replace("{n}", str(len(pieces))), question, urls, max_tokens=max_tokens)
         except BrainUnavailable:
             svc.brain._cooldown.pop(model, None)     # too big for what's left this minute: try the smaller picture
             log.info("Full-detail look refused; trying one picture")
-    if raw is not None:
-        out = _parse_json(raw)
-        if not isinstance(out, dict) or "answer" not in out:
-            return raw.strip(), [], True
-        boxes = []
-        for h in (out.get("highlights") or [])[:3]:
-            try:
-                k = min(len(pieces), max(1, int(h.get("image") or 1))) - 1
-                x1, y1, x2, y2 = [float(v) / 1000.0 for v in h["box"]]
-            except (KeyError, TypeError, ValueError, AttributeError):
-                continue
-            left, side = pieces[k][0], float(H)
-            box = (max(0.0, (left + min(x1, x2) * side) / W), max(0.0, min(y1, y2)),
-                   min(1.0, (left + max(x1, x2) * side) / W), min(1.0, max(y1, y2)))
-            if (box[2] - box[0]) * W >= 6 and (box[3] - box[1]) * H >= 6 and (box[2] - box[0]) * (box[3] - box[1]) < 0.85:
-                boxes.append((box, str(h.get("label") or "")[:28]))
-        return str(out["answer"]).strip(), boxes, True
+        else:
+            def to_box(item):
+                try:
+                    k = min(len(pieces), max(1, int(item.get("image") or 1))) - 1
+                    x1, y1, x2, y2 = [float(v) / 1000.0 for v in item["box"]]
+                except (KeyError, TypeError, ValueError, AttributeError):
+                    return None
+                left, side = pieces[k][0], float(H)
+                return _sane((max(0.0, (left + min(x1, x2) * side) / W), max(0.0, min(y1, y2)),
+                              min(1.0, (left + max(x1, x2) * side) / W), min(1.0, max(y1, y2))), W, H)
+            out = _parse_json(raw)
+            return (out if isinstance(out, dict) else None), raw, to_box, True
     square, sx, sy = _squared(img)
-    raw = svc.brain.see(POINT.format(title=title or "unknown", facts=_facts()), question, data_url(square),
-                        max_tokens=500)
+    raw = svc.brain.see(single_prompt, question, data_url(square), max_tokens=max_tokens)
+
+    def to_box(item):
+        try:
+            x1, y1, x2, y2 = [float(v) for v in item["box"]]
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return None
+        x1, x2 = sorted((x1 * sx, x2 * sx))
+        y1, y2 = sorted((y1 * sy, y2 * sy))
+        return _sane((max(0.0, x1), max(0.0, y1), min(1.0, x2), min(1.0, y2)), W, H)
     out = _parse_json(raw)
-    if not isinstance(out, dict) or "answer" not in out:
-        return raw.strip(), [], False                # plain text answer: still fine, just nothing to outline
-    return str(out["answer"]).strip(), _boxes(out.get("highlights"), sx, sy), False
+    return (out if isinstance(out, dict) else None), raw, to_box, False
+
+
+def _sane(box, W, H):
+    """A real box: not a speck, not basically the whole screen."""
+    w, h = box[2] - box[0], box[3] - box[1]
+    return box if w * W >= 6 and h * H >= 6 and w * h < 0.85 else None
+
+
+def locate(img, question, title=""):
+    """First look: (spoken answer, boxes as [((x1, y1, x2, y2) 0..1 of img, label)], full_detail)."""
+    facts = _facts()
+    out, raw, to_box, full = look(img, question, TILED.format(title=title or "unknown", facts=facts, n="{n}"),
+                                  POINT.format(title=title or "unknown", facts=facts))
+    if not out or "answer" not in out:
+        return raw.strip(), [], full                 # plain text answer: still fine, just nothing to outline
+    boxes = []
+    for h in (out.get("highlights") or [])[:3]:
+        box = to_box(h) if isinstance(h, dict) else None
+        if box:
+            boxes.append((box, str(h.get("label") or "")[:28]))
+    return str(out["answer"]).strip(), boxes, full
 
 
 def _highlight_later(img, monitor, boxes, question, seconds, full_detail=False):

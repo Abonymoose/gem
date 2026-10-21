@@ -46,6 +46,7 @@ class HighlightOverlay(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.boxes = []                 # [(QRectF in this window, label)]
+        self.callouts = []              # autofill: [{"rect", "label", "text", "why", "n"}]
         self.until = 0.0
         self.alpha = 0.0
         self.t0 = time.monotonic()
@@ -78,10 +79,23 @@ class HighlightOverlay(QWidget):
         """boxes: [(x1, y1, x2, y2) as 0..1 of the monitor, label]."""
         screen = _screen_for(phys_monitor)
         g = screen.geometry()
-        self.boxes = []
+        self.boxes, self.callouts = [], []
         for (x1, y1, x2, y2), label in boxes:
             r = QRectF(x1 * g.width(), y1 * g.height(), (x2 - x1) * g.width(), (y2 - y1) * g.height())
             self.boxes.append((r.adjusted(-PAD, -PAD, PAD, PAD), label))
+        self.until = time.monotonic() + seconds
+        self.t0 = time.monotonic()
+        self._cover(screen)
+        self.update()
+
+    def show_callouts(self, phys_monitor, items, seconds=40.0):
+        """Autofill: items are [((x1, y1, x2, y2) 0..1 of the monitor, label, text to fill in, why)]."""
+        screen = _screen_for(phys_monitor)
+        g = screen.geometry()
+        self.boxes, self.callouts = [], []
+        for n, ((x1, y1, x2, y2), label, text, why) in enumerate(items, 1):
+            r = QRectF(x1 * g.width(), y1 * g.height(), (x2 - x1) * g.width(), (y2 - y1) * g.height())
+            self.callouts.append({"rect": r.adjusted(-4, -4, 4, 4), "label": label, "text": text, "why": why, "n": n})
         self.until = time.monotonic() + seconds
         self.t0 = time.monotonic()
         self._cover(screen)
@@ -136,7 +150,7 @@ class HighlightOverlay(QWidget):
                 self.spot_rect = None
         if not showing and self.alpha < 0.01:
             self.alpha = 0.0
-            self.boxes = []
+            self.boxes, self.callouts = [], []
             self.timer.stop()
             self.hide()
             return
@@ -150,6 +164,16 @@ class HighlightOverlay(QWidget):
         full = QPainterPath()
         full.addRect(QRectF(self.rect()))
         holes = QPainterPath()
+        if self.callouts and time.monotonic() < self.until + 1:
+            for c in self.callouts:
+                one = QPainterPath()
+                one.addRoundedRect(c["rect"], 6, 6)
+                holes = holes.united(one)
+            # A light dim only: you still need to read the sheet around the suggestions.
+            p.fillPath(full.subtracted(holes), QColor(6, 4, 14, int(255 * 0.16 * self.alpha)))
+            self._callouts(p)
+            p.end()
+            return
         rects = [r for r, _ in self.boxes] if self.boxes and time.monotonic() < self.until + 1 else []
         if self.spot and self.spot_rect is not None and not rects:
             rects = [self.spot_rect]
@@ -164,6 +188,78 @@ class HighlightOverlay(QWidget):
         if self.boxes and rects and rects[0] is not self.spot_rect:
             self._outlines(p)
         p.end()
+
+    def _callouts(self, p):
+        """Each spot to fill: a numbered outline, and a card beside it with what goes there."""
+        a = self.alpha
+        t = time.monotonic() - self.t0
+        pulse = 0.8 + 0.2 * math.sin(t * 3.0)
+        mono = QFont("Cascadia Mono", 13, QFont.Bold)
+        if not QFontMetrics(mono).inFont("="):
+            mono = QFont("Consolas", 13, QFont.Bold)
+        f_label, f_why = T.font(10, QFont.DemiBold), T.font(10)
+        placed = []
+        W, H = self.width(), self.height()
+        for c in self.callouts:
+            r, n = c["rect"], c["n"]
+            # Outline on the spot itself.
+            for i in range(3):
+                p.setPen(QPen(T.alpha(QColor(139, 92, 246), 0.18 * pulse * a * (1 - i / 3)), 3 + i * 4))
+                p.setBrush(Qt.NoBrush)
+                p.drawRoundedRect(r, 6, 6)
+            g = QLinearGradient(r.topLeft(), r.bottomRight())
+            g.setColorAt(0.0, T.alpha(QColor(196, 160, 240), a))
+            g.setColorAt(1.0, T.alpha(QColor(236, 72, 153), a))
+            p.setPen(QPen(g, 2.2))
+            p.drawRoundedRect(r, 6, 6)
+            # The card: what to put there, and why.
+            fm_t, fm_l, fm_w = QFontMetrics(mono), QFontMetrics(f_label), QFontMetrics(f_why)
+            head = "%d  ·  %s" % (n, c["label"]) if c["label"] else str(n)
+            cw = max(fm_t.horizontalAdvance(c["text"]), fm_l.horizontalAdvance(head),
+                     fm_w.horizontalAdvance(c["why"]) if c["why"] else 0) + 40
+            cw = min(cw, 460)
+            ch = 14 + fm_l.height() + 4 + fm_t.height() + (4 + fm_w.height() if c["why"] else 0) + 12
+            right = r.right() + 18 + cw <= W - 8
+            x = r.right() + 18 if right else max(8, r.left() - 18 - cw)
+            y = min(max(8, r.center().y() - ch / 2), H - ch - 8)
+            card = QRectF(x, y, cw, ch)
+            for other in placed:                                    # don't stack cards on top of each other
+                if card.intersects(other):
+                    card.moveTop(other.bottom() + 8)
+            placed.append(card)
+            # Connector from the spot to its card.
+            sx = r.right() if right else r.left()
+            p.setPen(QPen(T.alpha(QColor(167, 139, 250), 0.85 * a), 1.6))
+            p.drawLine(QPointF(sx, r.center().y()), QPointF(card.left() if right else card.right(), card.center().y()))
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(QColor(18, 12, 30), 0.95 * a))
+            p.drawRoundedRect(card, 12, 12)
+            p.setPen(QPen(T.alpha(QColor(167, 139, 250), 0.85 * a), 1.2))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(card, 12, 12)
+            yy = card.top() + 12
+            p.setFont(f_label)
+            p.setPen(T.alpha(QColor(167, 139, 250), a))
+            p.drawText(QRectF(card.left() + 14, yy, cw - 28, fm_l.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                       fm_l.elidedText(head, Qt.ElideRight, int(cw - 28)))
+            yy += fm_l.height() + 4
+            p.setFont(mono)
+            p.setPen(T.alpha(QColor(244, 240, 251), a))
+            p.drawText(QRectF(card.left() + 14, yy, cw - 28, fm_t.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                       fm_t.elidedText(c["text"], Qt.ElideRight, int(cw - 28)))
+            yy += fm_t.height() + 4
+            if c["why"]:
+                p.setFont(f_why)
+                p.setPen(T.alpha(QColor(190, 180, 210), a))
+                p.drawText(QRectF(card.left() + 14, yy, cw - 28, fm_w.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                           fm_w.elidedText(c["why"], Qt.ElideRight, int(cw - 28)))
+            # Number badge on the spot.
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(QColor(139, 92, 246), a))
+            p.drawEllipse(QPointF(r.left(), r.top()), 9, 9)
+            p.setFont(T.font(9, QFont.Bold))
+            p.setPen(T.alpha(QColor(255, 255, 255), a))
+            p.drawText(QRectF(r.left() - 9, r.top() - 9, 18, 18), Qt.AlignCenter, str(n))
 
     def _outlines(self, p):
         t = time.monotonic() - self.t0

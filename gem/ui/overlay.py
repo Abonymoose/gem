@@ -38,6 +38,7 @@ class Bridge(QObject):
     quit = Signal()
     fx = Signal(str, float)
     highlight = Signal(object)
+    suggest = Signal(object)
     spotlight = Signal(bool)
 
 
@@ -136,6 +137,7 @@ class Overlay:
         self.bridge.quit.connect(self.app.quit)
         self.bridge.fx.connect(lambda kind, secs: self.island.play_fx(kind, secs))
         self.bridge.highlight.connect(self._on_highlight)
+        self.bridge.suggest.connect(self._on_suggest)
         self.bridge.spotlight.connect(self._on_spotlight)
 
         self.screen_geo = QGuiApplication.primaryScreen().geometry()
@@ -171,6 +173,10 @@ class Overlay:
     def spotlight(self, on):
         """Dim everything except the window in front (follows you) until turned off."""
         self.bridge.spotlight.emit(bool(on))
+
+    def suggest(self, monitor, items, seconds=40.0):
+        """Autofill: show what goes where (items: [((x1, y1, x2, y2) 0..1, label, text, why)])."""
+        self.bridge.suggest.emit({"monitor": monitor, "items": items, "seconds": seconds})
 
     def suppress(self, seconds):
         """Hide right away (e.g. so screenshots don't include Gem)."""
@@ -211,6 +217,10 @@ class Overlay:
     def _on_highlight(self, d):
         self.highlights.show_highlights(d["monitor"], d["boxes"], d.get("seconds", 9.0))
         self.island.raise_()                            # the island stays above the dimming
+
+    def _on_suggest(self, d):
+        self.highlights.show_callouts(d["monitor"], d["items"], d.get("seconds", 40.0))
+        self.island.raise_()
 
     def _on_spotlight(self, on):
         self.highlights.set_spotlight(on)

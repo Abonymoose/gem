@@ -726,6 +726,29 @@ def _rules():
     def _(m, t):
         return Match("clear_highlights")
 
+    # Autofill suggestions (shown and copied; you paste)
+    @rule(r"^(?:auto ?fill|autocomplete|auto complete)(?: (?:this|it|that|the sheet|my sheet|the form|this page|"
+          r"mode(?: on)?))?$|^(?:help me |can you )?fill (?:this|it|these|the blanks?|this sheet|the sheet|this form|"
+          r"the form|this in|it in|in the blanks?|in this sheet|out this form)(?: in| out)?$|"
+          r"^what (?:formula|function) (?:goes|should go|do i (?:use|need)|should i use)(?: here| in (?:this|that|the) "
+          r"(?:cell|column|row|box)| for (.+))?$|^(?:give me|write|suggest|make) (?:a |the )?(?:formula|excel formula)"
+          r"(?: for (.+)| here)?$|^(?:solve|answer|do|work out) (?:this|these|that|the|my)(?: (?:maths? |math )?"
+          r"(?:question|questions|problem|problems|sum|sums|equation|equations|worksheet))?(?: for me)?$|"
+          r"^what goes (?:here|in (?:this|that|the) (?:cell|box|blank|gap))$")
+    def _(m, t):
+        return Match("autofill", {"request": _raw.strip() or t})
+
+    @rule(r"^copy (?:the )?(first|second|third|fourth|last|1st|2nd|3rd|4th|next)(?: one| suggestion| answer| formula)?$|"
+          r"^copy (?:number|no|suggestion|answer|formula) (\d)$")
+    def _(m, t):
+        from .skills import autofill
+        if not autofill.last["fills"]:
+            return None
+        word = m.group(1) or m.group(2)
+        n = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "next": 0, "third": 3, "3rd": 3, "fourth": 4, "4th": 4,
+             "last": -1}.get(word, int(word) if word and word.isdigit() else 1)
+        return Match("autofill_copy", {"number": n})
+
     # Gem's own voice volume (not the PC's)
     @rule(r"\b(?:your|gem'?s|gems) (?:voice |own |speaking )?volume\b.*?\b(?:to|at) (\d{1,3})(?: percent|%)?$")
     def _(m, t):

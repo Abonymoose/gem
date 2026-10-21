@@ -134,7 +134,8 @@ def help_text():
             "best game moments, give you heads-ups, work offline for the basics, find your files, turn off the PC "
             "when your movie ends, skip around in videos, play trivia, play rain or ocean sounds, record voice notes, "
             "make images and wallpapers, switch your speakers, record your screen, check the air quality, point things "
-            "out on your screen, spotlight the window you're in, and answer questions. "
+            "out on your screen, spotlight the window you're in, suggest formulas and answers right next to what "
+            "needs filling, and answer questions. "
             "Say shut up for a bit when you need quiet.")
 
 
