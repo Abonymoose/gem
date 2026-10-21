@@ -49,7 +49,7 @@ def register(rule):
 
     # Screen memory
     @rule(r"^(?:remember|save|keep|bookmark) (?:this|that|this page|this screen|what's on (?:my|the) screen|"
-          r"my screen|the screen|this one|that one)(?: for later)?(?: (?:as|called|under) (.+))?$")
+          r"my screen|the screen|this one|that one)(?: for later)?(?: (?:as|called|under) (.+))?$", safe=False)
     def _(m, t):
         return Match("screen_save", {"note": m.group(1) or ""})
 

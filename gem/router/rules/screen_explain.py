@@ -1,4 +1,7 @@
-"""Commands: Explain my screen."""
+"""Commands: Explain my screen.
+
+Everything that sends the screen to the AI is unsafe: overheard speech goes through the AI's "is this for Gem"
+check first, so your screen only leaves the PC when you ask about it."""
 from ..core import Match
 
 
@@ -9,10 +12,11 @@ def register(rule):
           r"what(?:'s| is| does) this error(?: mean| say)?|what does (?:this|that) (?:error|message|pop ?up|warning) "
           r"(?:mean|say)|explain this (?:error|page|window|website|site|graph|chart|diagram|image|picture|problem|"
           r"question|meme|screen)|summari[sz]e this (?:page|website|site|article|window|post|thread)|"
-          r"what(?:'s| is) this (?:error|page|website|site|game|app|window|meme)|how do i fix this(?: error)?)$")
+          r"what(?:'s| is) this (?:error|page|website|site|game|app|window|meme)|how do i fix this(?: error)?)$",
+          safe=False)
     def _(m, t):
         return Match("explain_screen", {"question": t})
 
-    @rule(r"^(?:look at|check|read) (?:my|the) screen,? (?:and )?(.+)$")
+    @rule(r"^(?:look at|check|read) (?:my|the) screen,? (?:and )?(.+)$", safe=False)
     def _(m, t):
         return Match("explain_screen", {"question": m.group(1)})

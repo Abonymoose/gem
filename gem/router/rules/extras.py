@@ -31,7 +31,8 @@ def register(rule):
         return Match("shorten_link", {"url": raw.group(0) if raw else ""})
 
     @rule(r"^(?:copy|grab|get|extract) (?:the |all the )?text (?:from|on|off|in) (?:my |the |this )?"
-          r"(screen|image|picture|video|window|page|pdf)$|^copy (?:what's|whats) (?:written )?on (?:my |the )?screen$")
+          r"(screen|image|picture|video|window|page|pdf)$|^copy (?:what's|whats) (?:written )?on (?:my |the )?screen$",
+          safe=False)
     def _(m, t):
         return Match("copy_screen_text", {"what": "" if not m.group(1) or m.group(1) in ("screen", "window")
                                           else "the " + m.group(1)})

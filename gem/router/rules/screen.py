@@ -10,7 +10,7 @@ def register(rule):
           r"show me where (?:the |my )?(.+?) is|point (?:to|at|out) (?:the |my )?(.+)|highlight (?:the |my )?(.+)|"
           r"where do i (?:click|go|press|tap) (?:to |for )?(.+)|how do i (.+?) (?:here|on this page|in this app)|"
           r"where(?:'s| is) (?:the |my )?(.+? (?:button|link|tab|icon|menu|setting|settings|option|field|box|bar|"
-          r"toggle|switch))(?: here)?)$")
+          r"toggle|switch))(?: here)?)$", safe=False)
     def _(m, t):
         what = next(g for g in m.groups() if g)
         if re.search(r"\b(?:highlights?|outlines?|boxes)\b", what):
@@ -40,7 +40,7 @@ def register(rule):
           r"(?:cell|column|row|box)| for (.+))?$|^(?:give me|write|suggest|make) (?:a |the )?(?:formula|excel formula)"
           r"(?: for (.+)| here)?$|^(?:solve|answer|do|work out) (?:this|these|that|the|my)(?: (?:maths? |math )?"
           r"(?:question|questions|problem|problems|sum|sums|equation|equations|worksheet))?(?: for me)?$|"
-          r"^what goes (?:here|in (?:this|that|the) (?:cell|box|blank|gap))$")
+          r"^what goes (?:here|in (?:this|that|the) (?:cell|box|blank|gap))$", safe=False)
     def _(m, t):
         return Match("autofill", {"request": said().strip() or t})
 
@@ -57,13 +57,14 @@ def register(rule):
 
     # Screen questions phrased loosely
     @rule(r"^(?:take a screenshot|screenshot (?:this|that|my screen)|look at (?:my |the |this )?screen|check (?:my |the )?"
-          r"screen) and (.+)$")
+          r"screen) and (.+)$", safe=False)
     def _(m, t):
         # "Take a screenshot and tell me X" is a question about the screen, not a request to save a picture.
         raw = re.search(r"\band\s+(.+?)[.?!]*$", said() or t, re.I)
         return Match("explain_screen", {"question": raw.group(1) if raw else m.group(1)})
 
-    @rule(r"\bhighlight (?:the |my |what(?:'s| is) )?(.+?)(?: (?:on|in) (?:my|the) screen)?(?: right now| for me)?$")
+    @rule(r"\bhighlight (?:the |my |what(?:'s| is) )?(.+?)(?: (?:on|in) (?:my|the) screen)?(?: right now| for me)?$",
+          safe=False)
     def _(m, t):
         # "highlight ..." anywhere in the sentence, even after a misheard start ("I will highlight ...").
         if re.search(r"\b(?:highlights?|outlines?)\b", m.group(1)) or t.startswith(("hide", "clear", "remove")):

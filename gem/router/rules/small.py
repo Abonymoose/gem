@@ -21,12 +21,13 @@ def register(rule):
     def _(m, t):
         return Match("joke")
 
+    # Unsafe: said to someone else in the room, these would make Gem talk over the conversation.
     @rule(r"^(?:what can you do|help|help me|what are your commands|how do i use you|how do you work|"
-          r"list commands|commands)$")
+          r"list commands|commands)$", safe=False)
     def _(m, t):
         return Match("help")
 
-    @rule(r"^(?:repeat(?: that)?|say (?:that|it) again|what did you say|pardon|come again)$")
+    @rule(r"^(?:repeat(?: that)?|say (?:that|it) again|what did you say|pardon|come again)$", safe=False)
     def _(m, t):
         return Match("repeat")
 

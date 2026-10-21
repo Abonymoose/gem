@@ -5,6 +5,11 @@ from ...parse import parse_percent, words_to_numbers
 from ...skills import apps
 from ..core import Match, _known_app, _openable
 
+_VOLUME_WORDS = {"set", "change", "turn", "put", "make", "bring", "the", "my", "volume", "sound", "level", "to", "at",
+                 "up", "down", "by", "percent", "%", "a", "bit", "little", "lot", "raise", "lower", "increase",
+                 "decrease", "reduce", "boost", "louder", "quieter", "higher", "more", "it", "of", "pc", "computer",
+                 "system", "master", "main", "overall", "'s", "s", "notch", "tad", "slightly", "some"}
+
 
 def register(rule):
     # Volume
@@ -21,7 +26,8 @@ def register(rule):
         return Match("volume", {"mute": m.group(1) == "mute", "app": m.group(2)}, False) \
             if _known_app(m.group(2)) else None
 
-    @rule(r"^(?:max|maximum|full) volume$|^volume (?:max|maximum|full)$|^(?:turn it|volume) all the way up$")
+    @rule(r"^(?:max|maximum|full) volume$|^volume (?:max|maximum|full)$|^(?:turn it|volume) all the way up$|"
+          r"^(?:set |turn |put )?(?:the )?volume (?:to |at |up to )?(?:max|maximum|full)$")
     def _(m, t):
         return Match("volume", {"level": 100})
 
@@ -32,6 +38,13 @@ def register(rule):
         am = re.search(r"(?:set |change |turn )?(?:the )?(.+?)(?:'s)? volume", tn)
         if am and am.group(1) not in ("the", "my", "set", "change", "turn", "set the", "your") and _known_app(am.group(1)):
             app = am.group(1)
+        # Only a sentence made of volume words is a command; "he turned the volume up so loud" is a story.
+        rest = tn.replace(app, " ") if app else tn
+        if set(rest.split()) - _VOLUME_WORDS - {w for w in rest.split() if re.fullmatch(r"\d{1,3}%?", w)}:
+            return None
+        to = re.search(r"\b(?:down|up) to (\d{1,3})\b", tn)
+        if to:
+            return Match("volume", {"level": min(100, int(to.group(1))), "app": app})
         if re.search(r"\b(?:up|increase|raise|louder|higher|boost)\b", tn):
             n = re.search(r"\bby (\d+)", tn)
             return Match("volume", {"change": int(n.group(1)) if n else 10, "app": app})
@@ -89,8 +102,25 @@ def register(rule):
     def _(m, t):
         return Match("spotify_search", {"query": m.group(1)})
 
+    @rule(r"^(?:play (?:it|that|this|the (?:last )?song) again|replay (?:it|that|this|the song)|"
+          r"(?:restart|start over) (?:the |this )?(?:song|track))$", safe=False)
+    def _(m, t):
+        return Match("media", {"command": "previous"})       # players restart the track when it's past the start
+
+    @rule(r"^play (?:the )?next (?:one|video)$")
+    def _(m, t):
+        return Match("media", {"command": "next"})
+
+    @rule(r"^(?:play|put on) (?:some )?(?:music|something|songs?|a song|some tunes|tunes)$")
+    def _(m, t):
+        return Match("media", {"command": "play_pause"})
+
     @rule(r"^(?:play|put on)\s+(.+)$")
     def _(m, t):
+        if re.fullmatch(r"(?:it|that|this|them|him|her|again|along|around|with (?:it|that|me|them)|outside|now|"
+                        r"the game|a game|games?|fair|nice|dumb|dead|catch|ball|tag)(?: again| now| later| with \w+)?",
+                        m.group(1)):
+            return None                                         # not something to look up on YouTube
         return Match("youtube", {"query": m.group(1)})
 
     # Screens and windows
