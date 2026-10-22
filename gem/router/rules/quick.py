@@ -7,7 +7,7 @@ from ..core import Match
 
 def register(rule):
     # Instant maths and conversions (no AI)
-    @rule(r"\d|percent|square root")
+    @rule(r"\d|percent|\broot of\b")
     def _(m, t):
         return Match("calculate", {"expression": t}) if calc.calculate(t) else None
 

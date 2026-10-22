@@ -100,7 +100,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (say "confirm" to go ahead) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
-| Maths & conversions | "what's 15% of 80", "20% off 50", "15% tip on 80", "12 times 7", "3.5 times 2", "square root of 144", "convert 5 miles to km", "70 fahrenheit in celsius", "100 dollars to rupees" (instant, live exchange rates) |
+| Maths & conversions | "what's 15% of 80", "20% off 50", "15% tip on 80", "12 times 7", "3.5 times 2", "square root of 144", "cube root of 27", "convert 5 miles to km", "70 fahrenheit in celsius", "100 dollars to rupees" (instant, live exchange rates) |
 | Stopwatch | "start a stopwatch", "what's the stopwatch at", "stop the stopwatch" (counts up in the island) |
 | Clipboard | "what did I copy", "paste what I copied before", "paste clip 3", "paste the link about the essay" (remembered in memory only; passwords and keys are skipped) |
 | Reading | Select text and say "read this to me" (with nothing selected, Gem reads the window you're in); "read this page", "read this email", "read my screen"; "keep reading" for the rest of a long page; "copy that" copies Gem's last answer |
@@ -134,14 +134,14 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Ambient sounds | "play rain sounds", "play brown noise for 30 minutes", "ocean waves", "fan", "white noise"; "make it quieter", "stop the sounds" / "stop the rain". Made on the PC, dips while Gem talks |
 | Voice notes | "record a voice note" (hands-free, stops when you do, transcribed), "play my last voice note", "read my voice notes", "what did I say in my voice note about the trip" |
 | Images | "make me a wallpaper of a misty forest", "draw a cat in a space suit", then "set it as my wallpaper". Free and quick (Pollinations), so not 4K; one image every ~45 seconds |
-| Sound output | "switch to my headphones", "switch the audio to speakers", "what's my audio output" |
+| Sound output | "switch to my headphones", "switch the audio to speakers", "what's my audio output" (a numbered list), "switch to the second one" |
 | Windows by name | "minimize Discord", "hide Spotify", "restore Discord" / "bring back Spotify", "minimize everything except Chrome" |
 | Brightness | "brightness 40", "make the screen brighter", "dim the screen a bit", "what's the brightness". External monitors over DDC/CI (on in the monitor's menu), laptop screens through Windows |
 | Recording | "start recording" / "stop recording" (Xbox Game Bar, saved to Videos › Captures) |
 | Air | "how's the air quality", "what's the AQI in Delhi", "UV index"; heads-up when it's unhealthy |
 | More heads-ups | "Aarav's birthday is March 5" → reminded the evening before and on the day; "while you were away" summary when you come back to the PC; softer voice at night (11 PM to 7 AM) |
 | Picks | "what should I watch tonight", "what should I play", "recommend a funny movie": three picks based on your mood, what you've told Gem and the games you have installed |
-| Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
+| Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI", "what's on floor 6 of the zombie tower in Roblox Rivals" (searches the web and answers aloud) |
 | Routines & macros | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have". Macros can also type, press keys and click: see [Macros](#macros) |
 | Messages & email | "message Aarav on Discord saying I'm running late", "tell Priya on Google Chat that the meeting moved to 3", "email Aarav saying the notes are up". Gem gets it ready and waits for you to say "send it": see [Big steps wait for you](#big-steps-wait-for-you) |
 | Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org". Gamertags with symbols are easiest typed in the command bar ("Sam's Discord is xX_Sniper_Xx"); then "message Sam" or "message Sniper" both find him. If Discord shows a different display name, say "Sam is Bean on Discord" |
@@ -272,6 +272,12 @@ Apps are found automatically from the Start Menu, so app updates (like Discord's
 
 Gem uses Groq's free tier: `openai/gpt-oss-120b` first, then `qwen/qwen3.8-27b` and `openai/gpt-oss-20b`
 when one is rate-limited, and `whisper-large-v3-turbo` for speech. Change the order under `"ai"` and `"stt"`.
+
+**Web answers** use Groq's built-in web search on `openai/gpt-oss-20b` (set `"ai"` → `"search_models"` to
+change it), so they don't eat into the main model's allowance. Search pages that don't need a key now block
+scripts. When the search is unavailable, Gem answers from what the AI knows and says if it may be out of date.
+Each model on the free tier takes about 8,000 tokens a minute, and every question sends Gem's list of actions
+along, so a busy minute can run out: a backup AI key (below) is the best fix.
 
 **Backup AI.** When every Groq model is at its limit, Gem can switch to Gemini or OpenRouter (both have free
 keys: [Gemini](https://aistudio.google.com/apikey), [OpenRouter](https://openrouter.ai/keys)). Paste a key in

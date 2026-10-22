@@ -32,51 +32,6 @@ def _clean(fragment):
     return re.sub(r"\s+", " ", htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
 
 
-_STOP = {"the", "and", "for", "what", "who", "when", "where", "which", "how", "does", "did", "was", "were", "are",
-         "is", "last", "latest", "today", "now", "current", "right", "tell", "about", "with", "this", "that", "from"}
-
-
-def _keywords(query):
-    return [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 1 and w not in _STOP]
-
-
-def _relevant(result, keywords):
-    text = (result["title"] + " " + result["snippet"]).lower()
-    hits = sum(1 for k in keywords if k in text)
-    return hits >= max(1, (len(keywords) + 1) // 2)
-
-
-def _bing_url(url):
-    """Bing wraps result links in a redirect with the real URL base64-encoded in `u`."""
-    url = htmllib.unescape(url)
-    u = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("u", [""])[0]
-    if u.startswith("a1"):
-        import base64
-        s = u[2:]
-        try:
-            return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "ignore")
-        except Exception:
-            pass
-    return url
-
-
-def _bing(query, limit=6):
-    out = []
-    try:
-        page = requests.get("https://www.bing.com/search", params={"q": query, "form": "QBLH"}, headers=_UA,
-                            timeout=6).text
-        for m in re.finditer(r'<li class="b_algo".*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></h2>(.*?)</li>',
-                             page, re.S):
-            snip = re.search(r"<p[^>]*>(.*?)</p>", m.group(3), re.S)
-            out.append({"title": _clean(m.group(2)), "url": _bing_url(m.group(1)),
-                        "snippet": _clean(snip.group(1)) if snip else ""})
-            if len(out) >= limit:
-                break
-    except Exception as e:
-        log.warning("Bing search failed: %s", e)
-    return out
-
-
 def _news(query, limit=6):
     """Google News RSS: reliable, dated headlines for anything recent."""
     out = []
@@ -96,62 +51,48 @@ def _news(query, limit=6):
     return out
 
 
-def _search(query):
-    """Relevant web results first, then recent news."""
-    keywords = _keywords(query)
-    web = [r for r in _bing(query) if _relevant(r, keywords)]
-    return web, _news(query)
+def _spoken(answer):
+    """A model's answer, ready to be read out: no citation marks, markdown or links."""
+    answer = re.sub(r"\s*(【[^】]*】|\[\d+(?:,\s*\d+)*\]|\(\s*https?://[^)]*\))", "", answer or "")
+    answer = re.sub(r"\*\*|__|`|^#+\s*|^\s*[-*]\s+", "", answer, flags=re.M)
+    return re.sub(r"\s+", " ", answer).strip()
 
 
-def _page_text(url, limit=3000):
-    try:
-        r = requests.get(url, headers=_UA, timeout=5)
-        if "text/html" not in r.headers.get("content-type", ""):
-            return ""
-        body = re.sub(r"(?is)<(script|style|nav|footer|header|aside)[^>]*>.*?</\1>", " ", r.text)
-        paras = [_clean(p) for p in re.findall(r"(?is)<p[^>]*>(.*?)</p>", body)]
-        return " ".join(p for p in paras if len(p) > 40)[:limit]
-    except Exception:
-        return ""
+_NEWSY = re.compile(r"\b(?:news|latest|today|tonight|yesterday|this week|right now|currently|score|won|winner|price|"
+                    r"stock|election|released?|update|patch|announced?)\b", re.I)
 
 
-def _domain(url):
-    host = urllib.parse.urlparse(url).netloc.lower()
-    return host[4:] if host.startswith("www.") else host
-
-
-@action("web_answer", "Search the web and answer out loud. Use for news, scores, prices, recent events and other "
-        "live facts.", "query: str")
+@action("web_answer", "Search the web and answer out loud: news, scores, prices, recent events, and details you "
+        "aren't sure of (game mechanics, specs...).", "query: str")
 def web_answer(query="", q="", question="", text="", topic=""):
     query = (query or q or question or text or topic or "").strip()
     if not query:
         raise ActionError("What should I look up?")
-    web, news = _search(query)
-    if not web and not news:
-        return web_search(query)
-    lines = []
-    if web:
-        lines.append("Web results:")
-        lines += ["- %s (%s): %s" % (r["title"], _domain(r["url"]), r["snippet"]) for r in web]
-        top = next((r for r in web if not re.search(r"youtube\.com|\.pdf$", r["url"])), None)
-        page = _page_text(top["url"]) if top else ""
-        if page:
-            lines.append("\nFrom %s:\n%s" % (_domain(top["url"]), page))
-    if news:
-        lines.append("\nRecent news headlines:")
-        lines += ["- %s (%s)" % (r["title"], r["date"]) for r in news]
-    instruction = ("Today is %s. Answer the user's question for someone listening, in one or two short plain "
-                   "sentences, using only the search results below; prefer the most recent information. Mention "
-                   "the source only if it helps. No citation marks or brackets. If the results don't answer it, "
-                   "say you couldn't find a clear answer." % datetime.date.today().strftime("%A, %B %d, %Y"))
-    answer = svc.brain.complete(instruction, "Question: %s\n\n%s" % (query, "\n".join(lines)), max_tokens=220)
-    answer = re.sub(r"\s*(【[^】]*】|\[\d+(?:,\s*\d+)*\])", "", answer).strip()
+    today = datetime.date.today().strftime("%A, %B %d, %Y")
     sources = []
-    for r in web + news:
-        d = r.get("source") or _domain(r["url"])
-        if d and d not in sources and "news.google" not in d:
-            sources.append(d)
-    return card("web", answer, query=query, sources=sources[:3])
+    try:
+        # Groq's own web search: the keyless search pages all block scripts now (or quietly serve unrelated pages).
+        answer, sources = svc.brain.browse(
+            "Today is %s. Search the web, then answer for someone listening, in one to three short plain sentences "
+            "with the specific facts (numbers, names, dates) exactly as the best source gives them; for games and "
+            "software prefer the official wiki or documentation. Search once or twice and open at most one page. "
+            "No markdown, links or citation marks." % today, query)
+    except Exception as e:
+        log.info("Web search didn't answer (%s); answering from what the AI knows", e)
+        answer = ""
+    if not answer:
+        # Search is limited or down: say what the AI knows, with recent headlines when it's about news.
+        news = _news(query) if _NEWSY.search(query) else []
+        context = "\n".join("- %s (%s, %s)" % (r["title"], r["source"], r["date"]) for r in news)
+        answer = svc.brain.complete(
+            "Today is %s. Web search isn't available right now. Answer the user's question for someone listening, in "
+            "one to three short plain sentences, from what you know%s. If it may have changed since your training, "
+            "say so briefly. Don't guess numbers: if you aren't sure of one, say so. If you don't know, say that "
+            "plainly. No markdown." % (
+                today, " and the headlines below" if context else ""),
+            "Question: %s%s" % (query, "\n\nRecent headlines:\n" + context if context else ""), max_tokens=260)
+        sources = [r["source"] for r in news if r.get("source")][:3]
+    return card("web", _spoken(answer), query=query, sources=sources)
 
 
 @action("youtube", "Play the top YouTube result.", "query: str")
@@ -210,17 +151,32 @@ WEATHER_CODES = {
 _geo_cache = {}
 
 
-def _geocode(city):
-    key = city.lower().strip()
-    if key in _geo_cache:
-        return _geo_cache[key]
-    r = requests.get("https://geocoding-api.open-meteo.com/v1/search",
-                     params={"name": city, "count": 1, "language": "en"}, timeout=6).json()
-    if not r.get("results"):
-        return None
-    hit = r["results"][0]
-    _geo_cache[key] = (hit["latitude"], hit["longitude"], hit["name"])
+def _lookup(name):
+    key = name.lower().strip()
+    if key not in _geo_cache:
+        r = requests.get("https://geocoding-api.open-meteo.com/v1/search",
+                         params={"name": name, "count": 1, "language": "en"}, timeout=6).json()
+        hit = (r.get("results") or [None])[0]
+        _geo_cache[key] = (hit["latitude"], hit["longitude"], hit["name"]) if hit else None
     return _geo_cache[key]
+
+
+_PLACE_FILLER = re.compile(r"\b(?:right now|now|today|currently|at the moment|please|then|like|is it|tho|though)\b")
+
+
+def _geocode(city):
+    """(lat, lon, name) for a place, even with talk after it ("tokyo wait for him i don't want to go"): the whole
+    thing first, then its first few words."""
+    city = re.split(r"[?.!,;]", city or "")[0]
+    words = _PLACE_FILLER.sub(" ", city.lower()).split()
+    if not words:
+        return None
+    tries = [" ".join(words)] + [" ".join(words[:n]) for n in range(min(len(words) - 1, 3), 0, -1)]
+    for name in dict.fromkeys(tries):
+        hit = _lookup(name)
+        if hit:
+            return hit
+    return None
 
 
 @action("weather", "Weather and chance of rain.", "city?: str, when?: now|today|tomorrow")

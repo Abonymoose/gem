@@ -226,6 +226,23 @@ def _says(plain, phrase):
                      "yes " + phrase + " now")
 
 
+# How speech-to-text mishears the phrases when said on their own (from Gem's log).
+SOUNDALIKES = {
+    "confirm": {"conform", "perform", "can't form", "cant form", "good form", "can firm", "con firm", "come firm",
+                "confirmed", "comfirm", "conferm", "confirm it", "confirm that", "can't firm", "cant firm", "confirms"},
+    "send it": {"sent it", "send that", "send in", "sending", "sended", "sendit", "send its", "sent that", "send"},
+}
+
+
+def _sounds_like(plain, phrase):
+    """A near miss of an approval phrase: only trusted with push-to-talk, where holding the key is deliberate."""
+    import difflib
+    if plain in SOUNDALIKES.get(phrase, ()):
+        return True
+    a, b = re.sub(r"[^a-z]", "", plain), re.sub(r"[^a-z]", "", phrase)
+    return len(plain.split()) <= 3 and bool(a) and difflib.SequenceMatcher(None, a, b).ratio() >= 0.8
+
+
 def _phrase_for(kind):
     """The phrase that approves a "send it" or "confirm" step, as set in settings."""
     ps = phrases()
@@ -420,6 +437,9 @@ def hear(item, plain, by_name, other_pending=False):
             caption("Cancelled.", seconds=2)
             return ""
         return req.not_done_note()
+    if getattr(item, "source", "") == "ptt" and not is_phrase(plain) and _sounds_like(plain, req.phrase):
+        log.info("Big step %r: heard %r as %r (push-to-talk)", req.title, plain, req.phrase)
+        plain = req.phrase
     if is_phrase(plain):
         if _started(item) < req.created + 0.3:
             return None                              # started before this question was asked: meant for another

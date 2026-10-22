@@ -110,7 +110,9 @@ def parse_duration(text):
         else:
             total += v
         found = True
-    return int(total) if found and total > 0 else None
+    if not found or total <= 0:
+        return None
+    return int(total) if total == int(total) else round(total, 1)      # "1.5 seconds" stays 1.5, not 1
 
 
 def duration_phrase(seconds):

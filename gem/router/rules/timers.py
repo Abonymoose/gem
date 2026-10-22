@@ -31,7 +31,7 @@ def register(rule):
     def _(m, t):
         return Match("set_timer", {"seconds": parse_duration(m.group(1)), "label": m.group(2) or ""})
 
-    @rule(r"^(?:set |start |make )?(?:an? |the )?timer (?:for|of|to)\s+(.+?)(?:\s+(?:called|named|for)\s+(.+))?$")
+    @rule(r"^(?:set |start |make )?(?:an? |the |my |your )?timer (?:for|of|to)\s+(.+?)(?:\s+(?:called|named|for)\s+(.+))?$")
     def _(m, t):
         secs = parse_duration(m.group(1))
         if not secs and not m.group(2) and _remembered_timer(m.group(1)):

@@ -25,11 +25,16 @@ def register(rule):
     def _(m, t):
         return Match("todo_list")
 
-    @rule(r"^(?:mark|check off|cross off|tick off|complete|finish|i finished|i did|i've done|done with)\s+(.+?)"
-          r"(?:\s+(?:as )?(?:done|complete|completed|off))?(?:\s+(?:on|from) (?:my |the )?(?:to ?do |to-do |todo )?list)?$",
+    @rule(r"^(mark|check off|cross off|tick off|complete|finish|i finished|i did|i've done|done with)\s+(.+?)"
+          r"(?:\s+(?:as )?(?:done|complete|completed|off))?(\s+(?:on|from) (?:my |the )?(?:to ?do |to-do |todo )?list)?$",
           safe=False)
     def _(m, t):
-        return Match("todo_done", {"item": m.group(1)}, False)
+        if m.group(1) not in ("mark", "check off", "cross off", "tick off") and not m.group(3):
+            # "I did what?", "finish the essay": only about the list when it's something on the list
+            from ...skills import productivity
+            if not productivity._best(m.group(2), productivity._open_items()):
+                return None
+        return Match("todo_done", {"item": m.group(2)}, False)
 
     @rule(r"^(?:remove|delete|take)\s+(.+?)\s+(?:from|off)\s+(?:my |the )?(?:to ?do |to-do |todo )?list$", safe=False)
     def _(m, t):

@@ -273,7 +273,7 @@ class Assistant:
                 caption(None, you=text)
             macros.note_command(text, [m.action])
             result = actions.run(m.action, m.args)
-            return self._respond(result, text, item.source, [m.action])
+            return self._respond(result, text, item.source, [m.action], acts=[{"name": m.action, "args": m.args}])
 
         # AI path
         if not addressed and self._probably_chatter(norm):
@@ -297,10 +297,10 @@ class Assistant:
         if not addressed:
             caption(None, you=text)
 
-        names = []
+        names, ran = [], []
         macros.note_command(text, [a["name"] for a in plan["actions"]])
         safety.reset_outcome()
-        done = self._run_actions(plan["actions"], names)
+        done = self._run_actions(plan["actions"], names, ran)
         results = list(zip(names, done))
         cards = [card_of(r) for _, r in results if card_of(r)]
         reply = plan["reply"]
@@ -308,7 +308,7 @@ class Assistant:
             try:
                 final = svc.brain.follow_up(plan, results)
                 first = len(names)
-                done = self._run_actions(final.get("actions", []), names)
+                done = self._run_actions(final.get("actions", []), names, ran)
                 results = list(zip(names[first:], done))   # the first results were for the model
                 cards = [card_of(r) for _, r in results if card_of(r)] or cards
                 reply = final.get("reply", "")
@@ -320,12 +320,12 @@ class Assistant:
         spoken = " ".join([r for _, r in results if r] + ([reply] if reply else []))
         if not spoken and not names and explicit:
             spoken = "Sorry, I didn't get that."        # never leave a push-to-talk request hanging
-        self._respond(spoken, text, item.source, names, card=cards[0] if cards else None)
+        self._respond(spoken, text, item.source, names, card=cards[0] if cards else None, acts=ran)
 
     @staticmethod
-    def _run_actions(acts, names):
+    def _run_actions(acts, names, ran=None):
         """Run a plan's actions in order. Only one big step per request: once one is waiting for the user's OK,
-        the rest isn't done (doing it would replace what's on the card)."""
+        the rest isn't done (doing it would replace what's on the card). ran collects {"name", "args"} of each."""
         results = []
         for a in acts:
             if safety.stopping() or safety.last_outcome() in ("cancelled", "expired", "replaced", "aborted"):
@@ -336,6 +336,8 @@ class Assistant:
                 names.append("approve_one_at_a_time")
                 break
             names.append(a["name"])
+            if ran is not None:
+                ran.append({"name": a["name"], "args": a["args"]})
             results.append(actions.run(a["name"], a["args"]))
         return results
 
@@ -376,13 +378,13 @@ class Assistant:
         words = norm.split()
         return len(words) < 3 or all(w in FILLER for w in words)
 
-    def _respond(self, spoken, text, source, action_names, card=None):
+    def _respond(self, spoken, text, source, action_names, card=None, acts=None):
         card = card or card_of(spoken)
         if spoken:
             say(spoken, card=card)
         if action_names != ["snooze"]:
             svc.state.update(last_reply_at=time.time())
-        svc.brain.remember_exchange(text, source, str(spoken or ""), action_names)
+        svc.brain.remember_exchange(text, source, str(spoken or ""), action_names, acts)
         automemory.consider(text, action_names, source)
         if spoken or action_names:
             eggs.after_reply(source)

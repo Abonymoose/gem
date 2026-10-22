@@ -49,6 +49,10 @@ def fmt(x):
     return "{:,}".format(x)
 
 
+_ROOT = {"cube": 3, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9,
+         "tenth": 10}
+
+
 def to_expression(text):
     """Spoken maths -> a Python expression string, or None."""
     t = words_to_numbers(text.lower())
@@ -60,6 +64,9 @@ def to_expression(text):
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+", r"(\1/100)*", t)
     t = re.sub(r"(\d+(?:\.\d+)?)\s*(?:%|percent)", r"(\1/100)", t)
     t = re.sub(r"\bsquare root of\s+(\d+(?:\.\d+)?)", r"sqrt(\1)", t)
+    t = re.sub(r"\b(cube|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)) root of\s+"
+               r"(\d+(?:\.\d+)?)", lambda m: "(%s**(1/%d))" % (m.group(2), _ROOT.get(m.group(1)) or
+                                                               int(re.sub(r"\D", "", m.group(1)))), t)
     t = re.sub(r"(\d+(?:\.\d+)?)\s+squared\b", r"(\1**2)", t)
     t = re.sub(r"(\d+(?:\.\d+)?)\s+cubed\b", r"(\1**3)", t)
     for words, op in ((r"to the power of|raised to(?: the power of)?|\^", "**"), (r"multiplied by|times|\bx\b|×", "*"),
@@ -84,7 +91,7 @@ def calculate(text):
     return card("calc", "That's %s." % fmt(value), expression=shown, result=fmt(value))
 
 
-@action("calculate", "Exact arithmetic (percentages, powers, square roots).", "expression: str")
+@action("calculate", "Exact arithmetic (percentages, powers, square, cube and other roots).", "expression: str")
 def calculate_action(expression=""):
     res = calculate(expression)
     if res is None:
@@ -128,6 +135,15 @@ CURRENCIES = {
     "cad": "CAD", "canadian dollar": "CAD", "aud": "AUD", "australian dollar": "AUD", "jpy": "JPY", "yen": "JPY",
     "cny": "CNY", "yuan": "CNY", "chf": "CHF", "franc": "CHF", "aed": "AED", "dirham": "AED", "sgd": "SGD",
     "mxn": "MXN", "peso": "MXN", "krw": "KRW", "won": "KRW", "btc": None,
+    # People often say "rupees" for the Indonesian rupiah, and name a currency by its country.
+    "rupiah": "IDR", "indonesian rupiah": "IDR", "indonesian rupee": "IDR", "pakistani rupee": "PKR",
+    "sri lankan rupee": "LKR", "nepali rupee": "NPR", "nepalese rupee": "NPR", "taka": "BDT", "ringgit": "MYR",
+    "baht": "THB", "dong": "VND", "riyal": "SAR", "saudi riyal": "SAR", "qatari riyal": "QAR", "dinar": "KWD",
+    "kuwaiti dinar": "KWD", "rand": "ZAR", "real": "BRL", "brazilian real": "BRL", "lira": "TRY",
+    "turkish lira": "TRY", "ruble": "RUB", "rouble": "RUB", "hong kong dollar": "HKD", "singapore dollar": "SGD",
+    "new zealand dollar": "NZD", "philippine peso": "PHP", "mexican peso": "MXN", "japanese yen": "JPY",
+    "chinese yuan": "CNY", "swiss franc": "CHF", "korean won": "KRW", "south korean won": "KRW",
+    "american dollar": "USD", "uae dirham": "AED", "emirati dirham": "AED",
 }
 
 
@@ -164,6 +180,9 @@ def _rates():
 
 _CONVERT = re.compile(r"^(?:convert\s+|what(?:'s| is)\s+|how much is\s+)?([\d.,]+)\s*([a-z/ ]+?)\s+(?:to|in|into)\s+"
                       r"([a-z/ ]+?)\??$")
+# "convert indonesian rupees to inr", "what's a euro in rupees": no amount means one.
+_CONVERT_ONE = re.compile(r"^(?:convert|what(?:'s| is)|how much is)\s+(?:an?\s+|one\s+)?([a-z/ ]+?)\s+(?:to|in|into)\s+"
+                          r"([a-z/ ]+?)\??$")
 _HOW_MANY = re.compile(r"^how many\s+([a-z/ ]+?)\s+(?:are\s+)?(?:in|per)\s+(?:a|an|one|([\d.]+))\s+([a-z/ ]+?)\??$")
 
 
@@ -171,8 +190,11 @@ def convert(text):
     t = words_to_numbers(text.lower()).strip(" ?.")
     t = re.sub(r"\b(?:a|an)\s+(?=[a-z])", "1 ", t) if t.startswith(("convert a ", "convert an ")) else t
     m = _CONVERT.match(t)
+    one = None if m else _CONVERT_ONE.match(t)
     if m:
         amount, src, dst = float(m.group(1).replace(",", "")), m.group(2).strip(), m.group(3).strip()
+    elif one and _currency(one.group(1)) and _currency(one.group(2)):
+        amount, src, dst = 1.0, one.group(1).strip(), one.group(2).strip()
     else:
         m = _HOW_MANY.match(t)
         if not m:

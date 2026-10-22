@@ -57,28 +57,61 @@ def outputs():
 
 
 def _short(name):
-    return re.sub(r"\s*\((?:\d+-\s*)?(.+?)\)\s*$", r" (\1)", name)
+    name = re.sub(r"\((?:R|TM|C)\)", "", name, flags=re.I)                 # "Realtek(R) Audio" -> "Realtek Audio"
+    return re.sub(r"\s*\((?:\d+-\s*)?(.+?)\)\s*$", r" (\1)", name).strip()
+
+
+def _words(text):
+    return re.findall(r"[a-z0-9]+", re.sub(r"\((?:r|tm|c)\)", "", text.lower()))
 
 
 ALIASES = {"headphones": ["headphone", "headset", "earphone", "airpods", "buds", "arctis", "hyperx", "wh-", "wf-"],
            "speakers": ["speaker", "realtek", "monitor", "display", "hdmi", "tv"]}
+ORDINALS = {"first": 1, "one": 1, "1st": 1, "second": 2, "two": 2, "2nd": 2, "third": 3, "three": 3, "3rd": 3,
+            "fourth": 4, "four": 4, "4th": 4, "fifth": 5, "five": 5, "5th": 5, "sixth": 6, "six": 6, "6th": 6,
+            "last": -1}
 
 
-@action("audio_output", "Switch which device plays sound (headphones, speakers, a device by name), or say which one "
-        "is in use when no device is given.", "device?: str")
-def audio_output(device=""):
+def _listed():
+    """The devices in the order Gem reads them out (virtual Steam outputs left out), and the current one's id."""
     devices, default = outputs()
-    current = next((n for i, n in devices if i == default), "unknown")
+    return [(i, n) for i, n in devices if "steam streaming" not in n.lower()], default
+
+
+def _numbered(devices, default):
+    return "; ".join("%d, %s%s" % (k, _short(n), " (playing now)" if i == default else "")
+                     for k, (i, n) in enumerate(devices, 1))
+
+
+def _pick(want, devices, default):
+    """The device a request means: "the third one", "speakers", "realtek r audio", "benq"."""
+    words = [w for w in _words(want) if w not in ("the", "my", "to", "one", "option", "device", "output", "audio",
+                                                  "number", "r")] or _words(want)
+    num = next((ORDINALS[w] for w in _words(want) if w in ORDINALS), None)
+    if num is None:
+        num = next((int(w) for w in _words(want) if w.isdigit() and 0 < int(w) <= len(devices)), None)
+    if num is not None and (len(words) <= 1 or not any(w in " ".join(_words(n)) for _, n in devices for w in words)):
+        return [devices[num - 1 if num > 0 else -1]] if devices and abs(num) <= len(devices) else []
+    hints = ALIASES.get(want.rstrip("s") + "s", []) + ALIASES.get(want, [])
+    match = [(i, n) for i, n in devices if any(h in n.lower() for h in hints)]
+    if match:
+        return match
+    # Most words in common wins: "speakers realtek r audio" -> "Speakers (Realtek(R) Audio)"
+    scored = [(sum(1 for w in words if w in _words(n)), (i, n)) for i, n in devices]
+    best = max((s for s, _ in scored), default=0)
+    return [d for s, d in scored if s == best] if best else []
+
+
+@action("audio_output", "Switch which device plays sound (headphones, speakers, a device by name or by its number "
+        "in the list, e.g. 'the second one'), or say which ones there are when no device is given.", "device?: str")
+def audio_output(device=""):
+    devices, default = _listed()
     want = (device or "").lower().strip()
     if not want:
-        others = [_short(n) for i, n in devices if i != default and "steam streaming" not in n.lower()]
-        return "Sound is playing through %s.%s" % (_short(current), (" You can also switch to %s." % ", ".join(others))
-                                                    if others else "")
-    hints = ALIASES.get(want.rstrip("s") + "s", []) + ALIASES.get(want, []) + [want]
-    match = [(i, n) for i, n in devices if any(h in n.lower() for h in hints)]
+        return "You have %s. Say switch to, and a number or a name." % _numbered(devices, default)
+    match = _pick(want, devices, default)
     if not match:
-        names = ", ".join(_short(n) for _, n in devices)
-        raise ActionError("I couldn't find %s. You have %s." % (device, names))
+        raise ActionError("I couldn't find %s. You have %s." % (device, _numbered(devices, default)))
     dev_id, name = next(((i, n) for i, n in match if i != default), match[0])
     if dev_id == default:
         return "You're already on %s." % _short(name)
