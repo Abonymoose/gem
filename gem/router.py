@@ -182,6 +182,12 @@ def _rules():
         raw = re.search(r"\b(?:how to|a way to|automate)\s+(.+?)[.?!]*$", _raw, re.I)
         return Match("macro_auto", {"goal": raw.group(1) if raw else m.group(1)}, False)
 
+    @rule(r"^[a-z]+(?: [a-z]+)? (?:is|goes by|is called|shows up as) .+ on (?:discord|google chat|g ?chat|hangouts)$",
+          safe=False)
+    def _(m, t):
+        req = _messaging().parse_alias(_raw)
+        return Match("contact_alias", req, False) if req else None
+
     @rule(r"\b(?:discord|google chat|g ?chat|hangouts)\b", safe=False)
     def _(m, t):
         req = _messaging().parse_message(_raw)

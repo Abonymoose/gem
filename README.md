@@ -140,7 +140,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines & macros | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have". Macros can also type, press keys and click: see [Macros](#macros) |
 | Messages & email | "message Aarav on Discord saying I'm running late", "tell Priya on Google Chat that the meeting moved to 3", "email Aarav saying the notes are up". Gem gets it ready and waits for you to say "send it": see [Big steps wait for you](#big-steps-wait-for-you) |
-| Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org" |
+| Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org". Gamertags with symbols are easiest typed in the command bar ("Sam's Discord is xX_Sniper_Xx"); then "message Sam" or "message Sniper" both find him. If Discord shows a different display name, say "Sam is Bean on Discord" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
 | Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do" |
 

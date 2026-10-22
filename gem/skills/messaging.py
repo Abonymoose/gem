@@ -38,17 +38,33 @@ LOOK = ("This is a screenshot of the user's {app} window. Reply with JSON only: 
 # ── Contacts ─────────────────────────────────────────────────────────────────
 
 def _key(name):
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", "", (name or "").lower())).strip()
+    """Lower-case words only: "xX_Sniper_Xx" -> "xx sniper xx", "✨Bean✨" -> "bean"."""
+    return re.sub(r"\s+", " ", re.sub(r"[\W_]+", " ", (name or "").lower())).strip()
+
+
+def _names(person, which=None):
+    """Every name a saved person goes by: their name, Discord / Google Chat names and the display names Gem learned."""
+    apps = [which] if which else ["discord", "google_chat"]
+    names = [person.get("name")] + [person.get(a) for a in apps]
+    for a in apps:
+        names += person.get(a + "_names") or []
+    return [n for n in names if n]
 
 
 def contact(name):
-    """A saved person ({"name", "email", "discord", "google_chat"}) by name, or None."""
+    """A saved person ({"name", "email", "discord", "google_chat", ...}) by name, gamertag or display name, or None."""
     key = _key(name)
     people = contacts.data.get("people") or {}
     if not key:
         return None
     if key in people:
         return people[key]
+    # "sniper" finds the person whose Discord is xX_Sniper_Xx; only if exactly one person fits.
+    hits = [p for p in people.values() if any(key == k or key == k.replace(" ", "") or
+                                              (len(key) >= 3 and key in k.split())
+                                              for k in map(_key, _names(p)))]
+    if len(hits) == 1:
+        return hits[0]
     close = difflib.get_close_matches(key, list(people), n=1, cutoff=0.82)
     return people[close[0]] if close else None
 
@@ -62,6 +78,24 @@ def spoken_email(text):
     t = re.sub(r"\s+(?:dash|hyphen)\s+", "-", t)
     t = re.sub(r"\s+", "", t)
     return t if EMAIL_RE.match(t) else None
+
+
+@action("contact_alias", "Remember another name someone shows up as on Discord or Google Chat (a display name or "
+        "gamertag), e.g. 'Sam is Bean on Discord'.", "name: str, alias: str, app: discord|google_chat")
+def contact_alias(name="", alias="", app="discord"):
+    which = _which_app(app)
+    alias = (alias or "").strip().lstrip("@#")
+    if not _key(name) or not _key(alias):
+        raise ActionError("Who goes by what name?")
+    person = contact(name)
+    with contacts as d:
+        people = d.setdefault("people", {})
+        key = next((k for k, p in people.items() if p is person), None) or _key(name)
+        person = people.setdefault(key, {"name": name.strip().title()})
+        names = person.setdefault(which + "_names", [])
+        if alias.lower() not in [n.lower() for n in names]:
+            names.append(alias)
+    return "Got it: %s is %s on %s." % (person["name"], alias, APP_LABELS[which])
 
 
 @action("contact_save", "Save someone's email address, Discord name or Google Chat name/email, for sending them "
@@ -168,6 +202,21 @@ def parse_email(raw):
             subject = (m.groupdict().get("subject") or "").strip(" ,")
             return {"to": m.group("to").strip(" ,"), "subject": subject, "body": _body(m.group("body"))}
     return None
+
+
+def parse_alias(raw):
+    """"Sam is Bean on Discord" / "Sam goes by xX_Sniper_Xx on Discord" -> contact_alias args, or None."""
+    m = re.match(r"^(?P<name>[a-z]+(?: [a-z]+)?) (?:is|goes by|is called|shows up as) (?P<alias>.+?) on "
+                 + _APP + r"$", _clean(raw).rstrip(".!"), re.I)
+    if not m:
+        return None
+    name, alias = m.group("name"), m.group("alias").strip()
+    if name.lower().split()[0] in ("my", "what", "who", "which", "that", "this", "it", "he", "she", "they", "there",
+                                   "everyone", "nobody", "gem", "jem", "someone") or \
+            alias.lower() in ("online", "offline", "busy", "away", "here", "live", "streaming", "playing", "idle",
+                              "active", "muted", "banned", "typing", "down", "up", "back", "free", "on", "off"):
+        return None
+    return {"name": name, "alias": alias, "app": m.group("app").lower()}
 
 
 def parse_contact(raw):
@@ -313,7 +362,7 @@ def _search_open():
     return isinstance(out, dict) and out.get("open") is True
 
 
-def _verify(hwnd, label, names, text, where):
+def _verify(hwnd, label, names, text, where, who=""):
     """After the text is in the box: is this the right chat? Returns (where, warning). Raises if it's the wrong one."""
     names = [n for n in names if n]
     if not names or (where and any(_same(n, where) for n in names)):
@@ -325,7 +374,7 @@ def _verify(hwnd, label, names, text, where):
     draft = str(seen.get("draft") or "").strip()
     if convo and not any(_same(n, convo) for n in names):
         raise ActionError("The chat that opened is %s, not %s, so I won't send it. The text is in the box if you "
-                          "want it." % (convo, names[-1]))
+                          "want it.%s" % (convo, who or names[-1], _teach(convo, who, label)))
     warning = ""
     if not convo:
         warning = "I couldn't see whose chat this is. Look at %s before you say send it." % label
@@ -367,7 +416,15 @@ def _which_app(app):
     raise ActionError("I can send messages on Discord or Google Chat.")
 
 
-def _ready_discord(handle, names, text):
+def _teach(where, who, label):
+    """How to tell Gem that the chat it opened really is them (a display name it didn't know)."""
+    seen = re.sub(r"^[@#]", "", re.split(r"\s+[|-]\s+", where or "")[0]).strip()
+    if not seen or not who:
+        return ""
+    return " If that is %s, say “%s is %s on %s”, then ask me again." % (who, who, seen, label)
+
+
+def _ready_discord(handle, names, text, who=""):
     if len(text) > 2000:
         raise ActionError("That's too long for one Discord message.")
     hwnd = _bring(_is_discord, open_name="discord")
@@ -389,8 +446,8 @@ def _ready_discord(handle, names, text):
     where = _discord_where(window_title(hwnd))
     if names and where and not any(_same(n, where) for n in names):
         press("esc")
-        raise ActionError("Discord opened %s, which doesn't look like %s, so I stopped. Nothing was typed."
-                          % (where, names[-1]))
+        raise ActionError("Discord opened %s, which doesn't look like %s, so I stopped. Nothing was typed.%s"
+                          % (where, who or names[-1], _teach(where, who, "Discord")))
     paste_text(text)
     time.sleep(0.4)
     return hwnd, where
@@ -436,13 +493,15 @@ def send_message(app="discord", to="", text=""):
     shown = (person or {}).get("name") or to
     if safety.unattended():
         return safety.skip("Send “%s” to %s on %s" % (_short(text), shown or "the open chat", label))
-    names = [n for n in (handle, shown) if n]
+    names = [n for n in [handle, shown] + (_names(person, which) if person else []) if n]
     _started.stops = safety.stops()
     if which == "discord":
-        hwnd, where = _ready_discord(handle, names, text)
+        # A saved Discord name is a person: "@" makes the quick switcher look only at people, not channels.
+        search = "@" + handle if person and person.get("discord") else handle
+        hwnd, where = _ready_discord(search, names, text, shown)
     else:
         hwnd, where = _ready_gchat(handle, names, text)
-    where, warning = _verify(hwnd, label, names, text, where)
+    where, warning = _verify(hwnd, label, names, text, where, shown)
     _check_front(hwnd, label)                    # a stop or panic while Gem was looking
     ready = _plain_title(window_title(hwnd))
     return safety.ask("Send on %s" % label, lambda: _press_send(hwnd, ready, ("enter",), label), app=label,
