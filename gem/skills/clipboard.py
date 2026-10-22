@@ -86,6 +86,10 @@ def clipboard_paste(number=None, match=""):
         if n < 1 or n > len(items):
             raise ActionError("I only have %d things in your clipboard history." % len(items))
         text = items[n - 1][1]
+    from .. import safety
+    if safety.paste_runs(text, winapi.foreground_window()):
+        raise ActionError("That's more than one line, and pasting it here would run it. Paste it yourself if you mean "
+                          "to.")
     winapi.paste_text(text)
     preview = re.sub(r"\s+", " ", text)
     return card("draft", "Pasted.", note=preview[:300] + ("…" if len(preview) > 300 else ""), title="Pasted")

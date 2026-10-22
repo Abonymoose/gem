@@ -65,6 +65,8 @@ def _text_task(task, instruction, text, output):
     if output == "clipboard":
         set_clipboard(result)
         return "Done, it's on your clipboard."
+    if safety.paste_runs(result, foreground_window()):
+        raise ActionError("Pasting that here would run it, so it's on your clipboard instead.")
     paste_text(result)
     return None
 
@@ -132,8 +134,11 @@ def spell(word=""):
 def type_into_app(text=""):
     if not text:
         raise ActionError("What should I type?")
+    hwnd = foreground_window()
+    if safety.window_kind(hwnd) == "delete dialog":
+        raise ActionError("The box asking to delete files is in front, so I didn't type there.")
     release_modifiers()
-    _type(text, safety.window_kind(foreground_window()) == "messaging")
+    _type(text, hwnd)
     return None
 
 
@@ -162,10 +167,15 @@ def dictation(on=True):
     return "Dictation off."
 
 
-def _type(text, chat):
-    """In a chat app a line break would be Enter, which sends: there new lines are Shift+Enter."""
-    if chat:
-        type_plain(text, soft_newlines=True)
+def _enter_is_big(hwnd):
+    """Enter here sends, runs or submits something (a chat, a terminal, a checkout page...)."""
+    return safety.big_key(["enter"], hwnd) is not None
+
+
+def _type(text, hwnd):
+    """Where Enter would send, run or submit, a line break is never Enter: Shift+Enter in chats, a space elsewhere."""
+    if _enter_is_big(hwnd):
+        type_plain(text, soft_newlines=safety.window_kind(hwnd) == "messaging")
     else:
         type_text(text)
 
@@ -184,9 +194,11 @@ def handle_dictation(text):
                 press("backspace")
             _last_chunk = ""
         return None
-    chat = safety.window_kind(foreground_window()) == "messaging"
+    hwnd = foreground_window()
     if plain in ("new line", "next line", "new paragraph", "next paragraph"):
-        _type("\n" if plain.endswith("line") else "\n\n", chat)
+        if _enter_is_big(hwnd) and safety.window_kind(hwnd) != "messaging":
+            return "That would press Enter here. Say press enter if you mean it."
+        _type("\n" if plain.endswith("line") else "\n\n", hwnd)
         return None
     if plain in ENTER_WORDS:
         press("enter")
@@ -195,7 +207,7 @@ def handle_dictation(text):
     chunk = re.sub(r"\s*\b(new paragraph)\b\s*", "\n\n", chunk, flags=re.I)
     chunk = chunk.strip() + " "
     release_modifiers()
-    _type(chunk, chat)
+    _type(chunk, hwnd)
     _last_chunk = chunk
     time.sleep(0.05)
     return None

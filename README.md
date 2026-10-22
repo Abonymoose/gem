@@ -98,7 +98,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
 | Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish", "how many words is this" (counted on the PC, with characters and reading time). Also "how do you spell necessary" |
 | Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
-| PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (asks to confirm) |
+| PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (say "confirm" to go ahead) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |
 | Maths & conversions | "what's 15% of 80", "20% off 50", "15% tip on 80", "12 times 7", "3.5 times 2", "square root of 144", "convert 5 miles to km", "70 fahrenheit in celsius", "100 dollars to rupees" (instant, live exchange rates) |
 | Stopwatch | "start a stopwatch", "what's the stopwatch at", "stop the stopwatch" (counts up in the island) |
@@ -144,7 +144,7 @@ request. Handy in calls. Up and Down recall what you typed before. Right-click t
 | Live answers | "who won the game last night", "bitcoin price", "latest news about OpenAI" (searches the web and answers aloud) |
 | Routines & macros | "study mode" (example), "create a routine called wind down that pauses the music and turns on dark mode", "what routines do I have". Macros can also type, press keys and click: see [Macros](#macros) |
 | Messages & email | "message Aarav on Discord saying I'm running late", "tell Priya on Google Chat that the meeting moved to 3", "email Aarav saying the notes are up". Gem gets it ready and waits for you to say "send it": see [Big steps wait for you](#big-steps-wait-for-you) |
-| Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org" |
+| Contacts | "Aarav's email is aarav dot shah at gmail dot com", "Sam's Discord is sam_the_man", "Priya's Google Chat is priya at school dot org". Gamertags with symbols are easiest typed in the command bar ("Sam's Discord is xX_Sniper_Xx"); then "message Sam" or "message Sniper" both find him. If Discord shows a different display name, say "Sam is Bean on Discord" |
 | Anything else | Questions, maths, explanations, multi-step requests ("open GitHub and set a 5 minute timer") |
 | Gem herself | "gaming mode", "switch to always listening", "turn off your voice", "repeat that", "what did you hear", "what can you do", "which AI are you using". "Undo that" / "put it back" reverses her last change to the volume, brightness or dark mode, or brings back a timer or reminder you just cancelled |
 | Mishearings | Gem quietly fixes near-misses when you're clearly talking to her ("spotlite this window", "set a timmer", "Jim, pause"). Teach it words it keeps getting wrong: "when I say free ya, I mean Freya". Right after a mistake: "no, I said open Discord", or "I said Spotify, not spot if I" (learns it and redoes the request). "What words have I taught you", "forget the word fix for free ya" |
@@ -153,8 +153,9 @@ To lock the PC say "lock my PC"; to close Gem say "close Gem" or use the tray.
 
 ### Reply mode
 
-Gem types into the message box you're in. You press Enter, or in Discord, Google Chat, Gmail and other chat apps
-say "send it" and Gem sends it (after checking it's still the same chat).
+Gem types into the message box you're in. You press Enter, or, in chat and email apps whose window title shows who
+you're talking to (Discord, Google Chat, Gmail...), say "send it" and Gem sends it after checking it's still the same
+chat.
 
 - **Away note**: say "I'm stepping away for 30 minutes" (or "away mode until 6"). In any chat or email, "tell them
   I'm away" types *"Parshv isn't here right now, this is his voice assistant speaking. He'll be back in about 25
@@ -181,7 +182,8 @@ can work inside other apps:
 
 Three ways to make one:
 
-- **Say it**: "create a macro called hello that switches to Discord, types hi everyone and presses enter".
+- **Say it**: "create a macro called hello that switches to Discord, types hi everyone and presses enter". The first
+  time it runs, Gem shows the steps it understood and waits for "confirm".
 - **Record it**: "record a macro" (or "watch what I do"), do the task, then "stop recording" and "call it ...".
   Keys, typing, clicks and app switches are recorded; anything you ask Gem for while recording becomes a step.
   A red dot in the island shows it's recording. Nothing typed in sign-in or password windows is recorded, and
@@ -196,23 +198,34 @@ types into its own windows.
 
 ### Big steps wait for you
 
-Some steps can't be taken back, so Gem shows exactly what will happen and waits for you to say **"send it"** or
-**"confirm"** ("yes" or "okay" isn't enough):
+Some steps can't be taken back, so Gem shows exactly what will happen and waits for **"send it"** (for anything
+that sends) or **"confirm"** (for everything else). "Yes" or "okay" isn't enough, and the card always says which one:
 
 - sending a Discord or Google Chat message or an email (the card shows who it goes to and the exact text),
-- Enter in a chat or email app, or in a terminal; Delete in File Explorer,
-- clicking anything that looks like Send, Delete, Buy, Pay, Submit and the like, or any recorded click in a chat app,
-- restarting, shutting down or signing out from a macro,
-- running a plan Gem worked out itself.
+- Enter in a chat or email app, a terminal, or a checkout, payment or account page,
+- deleting in File Explorer or on the desktop (Delete, Ctrl+D, or a recorded click there),
+- clicking anything that looks like Send, Delete, Buy, Pay, Submit and the like, or any click in a chat app,
+- restarting, shutting down, signing out or sleeping the PC,
+- running a plan Gem worked out itself, or a macro Gem wrote for you the first time it runs.
+
+One big step at a time: if you ask for two messages at once, Gem gets the first ready and asks you again for the
+second after you've answered. Typing and dictation never press Enter where Enter would send or run something; say
+"press enter" in dictation if you mean it.
 
 If Gem has learned your voice ("learn my voice"), it has to be your voice saying it. In always-listening mode
 before it knows your voice, say "Gem, send it", so a video saying "send it" can't. Typing the phrase in the command bar
-works too. Say "cancel", or just wait 45 seconds, and nothing happens. Before pressing Send, Gem checks the same window
-is still in front showing the same chat, and double-checks the recipient from the window title or a look at the
-screen; if it's the wrong chat it stops. Gmail lets you undo for a few seconds after sending.
+works too. Say "cancel" or "stop", or just wait 45 seconds, and nothing happens. Before pressing Send, Gem checks the
+same window is still in front showing the same chat, and double-checks the recipient from the window title or a look at
+the screen; if it's the wrong chat it stops. Gmail lets you undo for a few seconds after sending.
 
 Nothing scheduled can approve a big step. When a macro or command runs while nobody is there to answer ("at 7 pm run
-my morning macro"), big steps are skipped and you get a note about what was skipped.
+my morning macro"), big steps are skipped and you get a note about what was skipped. Messages and emails can't be
+scheduled at all (sending needs your OK when it happens), and "shut down the PC in an hour" asks for "confirm" now and
+warns you a minute before, so you can still say "cancel".
+
+To message someone new on Google Chat, Gem opens the "new chat" search and checks on screen that it really opened
+before typing their name; if it can't tell, it asks you to open the chat yourself. Only one question is ever open:
+a new one replaces the last, and "stop" or "cancel" also stops a macro that's running.
 
 Phrases, the waiting time and the "Gem, send it" rule are under `"safety"` in `settings.json`.
 

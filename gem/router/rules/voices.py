@@ -8,9 +8,9 @@ def register(rule):
     # Voice lock
     @rule(r"^(?:learn|train|memori[sz]e|recogni[sz]e|remember) (?:my voice|what i sound like|how i sound)$|"
           r"^(?:re)?train (?:my )?voice(?: recognition| lock)?$|^voice training$|"
-          r"^set up (?:voice (?:recognition|lock|id)|my voice)$|^teach you my voice$")
+          r"^set up (?:voice (?:recognition|lock|id)|my voice)$|^teach you my voice$", safe=False)
     def _(m, t):
-        return Match("voice_train")
+        return Match("voice_train", {}, False)       # your voice approves big steps: never from overheard speech
 
     @rule(r"^(?:only (?:listen|respond|reply) to me|only (?:listen|respond) to my voice|listen only to me|"
           r"ignore (?:other|everyone else'?s?) (?:people|voices?)|ignore everyone else|"

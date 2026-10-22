@@ -516,6 +516,16 @@ def schedule_command(command="", time=None, minutes=None):
         at, _ = parse_when(str(time))
     if not command or at is None:
         raise ActionError("What should I do, and when?")
+    from .. import router
+    m = router.match(router.normalize(command)[0], command)
+    if m and m.action in ("send_message", "send_email", "macro_auto"):
+        raise ActionError("I can't do that later on my own: sending needs your OK when it happens. I can remind you "
+                          "instead.")
+    if m and m.action == "power" and m.args.get("command") in ("shutdown", "restart", "sleep", "hibernate"):
+        from .power_auto import power_when            # it warns a minute before, and you can cancel
+        return power_when(m.args["command"], "time", max(1.0, (at - datetime.datetime.now()).total_seconds() / 60.0))
+    if m and m.action == "power" and m.args.get("command") == "sign_out":
+        raise ActionError("I can't sign you out later. Ask me when you're ready.")
     _add("command", at, message=command)
     left = (at - datetime.datetime.now()).total_seconds()
     when = "in " + duration_phrase(round(left / 60) * 60 if left > 90 else left) if left < 3 * 3600 \

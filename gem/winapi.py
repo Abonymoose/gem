@@ -65,7 +65,7 @@ for _name, _vk in sorted(KEY_NAMES.items(), key=lambda kv: len(kv[0])):
 for _vk, _name in ((0x0D, "enter"), (0x1B, "esc"), (0x2E, "delete"), (0x11, "ctrl"), (0x5B, "win"),
                    (0x21, "pageup"), (0x22, "pagedown"), (0x2D, "insert"), (0x5D, "menu"), (0x2C, "printscreen"),
                    (0xA0, "shift"), (0xA1, "shift"), (0xA2, "ctrl"), (0xA3, "ctrl"), (0xA4, "alt"), (0xA5, "alt"),
-                   (0x5C, "win")):
+                   (0x5C, "win"), (0xBE, "period"), (0xBC, "comma")):
     VK_NAMES[_vk] = _name
 MODIFIERS = ("ctrl", "shift", "alt", "win")
 
@@ -84,12 +84,15 @@ def vk_name(vk):
 
 def parse_chord(text):
     """'ctrl+shift+k' or 'ctrl shift k' -> ['ctrl', 'shift', 'k'] (modifiers first); None if a key is unknown."""
+    chunks = re.split(r"\s*\+\s*", (text or "").strip().lower())
+    if len(chunks) > 1 and "" in chunks:
+        return None                                           # "ctrl+" is missing its key
     parts = []
-    for chunk in re.split(r"\s*\+\s*", (text or "").strip().lower()):
+    for chunk in chunks:
         parts += [chunk] if key_code(chunk) is not None else chunk.split()
-    parts = [{"control": "ctrl", "windows": "win", "return": "enter", "escape": "esc"}.get(p, p) for p in parts if p]
-    if not parts or any(key_code(p) is None for p in parts):
+    if not parts or any(key_code(p) is None for p in parts if p):
         return None
+    parts = [vk_name(key_code(p)) or p for p in parts if p]          # one name per key: "del" is "delete"
     mods = [m for m in MODIFIERS if m in parts]
     rest = [p for p in parts if p not in MODIFIERS]
     if len(rest) > 1 or (not rest and len(mods) > 1):
@@ -226,17 +229,22 @@ def cursor_pos():
 
 
 def click_at(x, y, button="left", double=False):
-    """Move the mouse to (x, y) in physical pixels and click there."""
+    """Move the mouse to (x, y) in physical pixels and click there. False (no click) if the mouse got moved away."""
     down, up = MOUSE_FLAGS.get(button, MOUSE_FLAGS["left"])
     with _PhysicalDpi():
         user32.SetCursorPos(int(x), int(y))
     time.sleep(0.05)
-    for _ in range(2 if double else 1):
-        for flag in (down, up):
-            inp = INPUT(type=INPUT_MOUSE)
-            inp.u.mi = MOUSEINPUT(0, 0, 0, flag, 0, 0)
-            _send([inp])
+    for i in range(2 if double else 1):
+        cx, cy = cursor_pos()
+        if abs(cx - int(x)) > 2 or abs(cy - int(y)) > 2:
+            return i > 0
+        inp = (INPUT * 2)()
+        for j, flag in enumerate((down, up)):
+            inp[j].type = INPUT_MOUSE
+            inp[j].u.mi = MOUSEINPUT(0, 0, 0, flag, 0, 0)
+        user32.SendInput(2, inp, ctypes.sizeof(INPUT))      # down and up together
         time.sleep(0.06)
+    return True
 
 
 def window_at(x, y):

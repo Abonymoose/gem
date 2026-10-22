@@ -24,6 +24,10 @@ class ActionError(Exception):
     """Raise with a short sentence to say it to the user."""
 
 
+class Failure(str):
+    """What run() returns when an action refused or failed: still the sentence to say, but marked."""
+
+
 def action(name, doc, args="", ai=True):
     """ai=False keeps an action out of the model's catalog (router only)."""
     def deco(fn):
@@ -55,10 +59,10 @@ def run(name, args=None):
     try:
         return a.fn(**accepted)
     except ActionError as e:
-        return str(e)
+        return Failure(str(e))
     except TypeError as e:
         log.warning("Action %s bad arguments %s: %s", name, accepted, e)
-        return "I couldn't do that, something was missing."
+        return Failure("I couldn't do that, something was missing.")
     except Exception:
         log.exception("Action %s failed", name)
-        return "Sorry, that didn't work."
+        return Failure("Sorry, that didn't work.")

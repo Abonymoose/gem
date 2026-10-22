@@ -758,7 +758,12 @@ class RoutinesPage(Page):
     def _save(self):
         steps = [l.strip() for l in self.steps.toPlainText().splitlines() if l.strip()]
         phrases = [p.strip() for p in self.phrases.text().split(",") if p.strip()]
-        res = actions.run("routine_create", {"name": self.name.text(), "steps": steps, "phrases": phrases})
+        from ..actions import ActionError
+        from ..skills import routines
+        try:
+            res = routines.save(self.name.text(), steps, phrases)     # typed here by you: runs without asking first
+        except ActionError as e:
+            res = str(e)
         self.feedback.setText(str(res or ""))
         self.refresh()
 
