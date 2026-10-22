@@ -142,25 +142,29 @@ def _rules():
         if re.match(r"^(?:a )?(?:day|night|quits)$", name):
             return None
         explicit = bool(re.search(r"\bmacro\b", name))
-        naming = m.group(1).startswith(("call", "name"))
-        if not (explicit or macros.awaiting_name() or (naming and macros.plan_recent())):
+        naming = m.group(1).startswith(("call", "name", "save it"))
+        if not (explicit or (naming and (macros.awaiting_name() or macros.plan_recent()))):
             return None                         # "save this as ..." is screen memory otherwise
         return Match("macro_name", {"name": macros.clean_name(name)}, False)
 
     @rule(r"^(?:stop|cancel|abort|kill|end|halt)(?: the| this| my)? (?:macro|routine)$|"
           r"^stop (?:running|doing) (?:the macro|the routine|that|it)$")
     def _(m, t):
-        return Match("macro_stop")
+        from .skills import macros
+        return Match("macro_stop") if macros.running() else None     # nothing running: not worth a reply
 
     @rule(r"^(?:run|start|play|do)(?: the| my)? (.+?) (?:macro|routine)$|"
           r"^(?:run|play|start)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
     def _(m, t):
         name = m.group(1) or m.group(2)
-        return None if name in _PRONOUNS else Match("routine_run", {"name": name}, False)
+        if name in _PRONOUNS or re.search(r"\b(?:at|in|on|by|every|tomorrow|tonight)\b.*(?:\d|am|pm|morning|evening|"
+                                          r"night|noon|midnight)$", name):
+            return None                         # "run the macro called X at 7 pm": scheduling, not X now
+        return Match("routine_run", {"name": name}, False)
 
-    @rule(r"^(?:what (?:macros|routines) do i have|list (?:my )?macros|(?:show (?:me )?)?my macros)$")
+    @rule(r"^(?:what (?:macros|routines) do i have|list (?:my )?macros|(?:show (?:me )?)?my macros)$", safe=False)
     def _(m, t):
-        return Match("routine_list")
+        return Match("routine_list", {}, False)
 
     @rule(r"^(?:delete|remove)(?: the| my)? (.+?) (?:macro|routine)$|"
           r"^(?:delete|remove)(?: the| my)? (?:macro|routine) (?:called |named )?(.+)$", safe=False)
@@ -170,6 +174,11 @@ def _rules():
 
     @rule(r"^(?:figure out how to|work out how to|find a way to|automate|try to figure out how to) (.+)$", safe=False)
     def _(m, t):
+        if not re.search(r"\b(?:open|click|type|press|install|set up|go to|turn (?:on|off)|switch|download|upload|"
+                         r"sign (?:in|out)|log (?:in|out)|close|move|rename|copy|paste|save|sort|tidy|clean|"
+                         r"organi[sz]e|launch|start|run|app|apps|window|tab|folder|file|files|browser|settings|"
+                         r"desktop|pc|computer|discord|chrome|spotify|excel|word|notepad)\b", m.group(1)):
+            return None                         # a question, not a task on the PC: the AI answers it
         raw = re.search(r"\b(?:how to|a way to|automate)\s+(.+?)[.?!]*$", _raw, re.I)
         return Match("macro_auto", {"goal": raw.group(1) if raw else m.group(1)}, False)
 
@@ -666,9 +675,9 @@ def _rules():
     # Voice lock
     @rule(r"^(?:learn|train|memori[sz]e|recogni[sz]e|remember) (?:my voice|what i sound like|how i sound)$|"
           r"^(?:re)?train (?:my )?voice(?: recognition| lock)?$|^voice training$|"
-          r"^set up (?:voice (?:recognition|lock|id)|my voice)$|^teach you my voice$")
+          r"^set up (?:voice (?:recognition|lock|id)|my voice)$|^teach you my voice$", safe=False)
     def _(m, t):
-        return Match("voice_train")
+        return Match("voice_train", {}, False)       # your voice approves big steps: never from overheard speech
 
     @rule(r"^(?:only (?:listen|respond|reply) to me|only (?:listen|respond) to my voice|listen only to me|"
           r"ignore (?:other|everyone else'?s?) (?:people|voices?)|ignore everyone else|"

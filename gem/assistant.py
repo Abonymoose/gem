@@ -55,6 +55,7 @@ class Assistant:
         self.last_heard = deque(maxlen=20)
         self._queue = queue.Queue()
         self._pending = None            # (callback, expires_at)
+        self._panicked_at = 0.0
 
     def start(self):
         _trim_history()
@@ -71,10 +72,16 @@ class Assistant:
     # ── Helpers other modules use ───────────────────────────────────────────
 
     def confirm(self, question, callback, timeout=20):
-        """Ask a yes/no question; callback runs (and its result is spoken) on yes."""
+        """Ask a yes/no question; callback runs (and its result is spoken) on yes. Only one question is ever open:
+        this one replaces any "send it" / "confirm" card, so an answer can't land on a question you can't see."""
+        safety.replace()
         self._pending = (callback, time.time() + timeout)
         say(question, card={"kind": "confirm"})
         svc.state.update(last_reply_at=time.time())
+
+    def drop_question(self):
+        """Forget an open yes/no question (a "send it" / "confirm" card replaces it)."""
+        self._pending = None
 
     def execute(self, command):
         """Run one command without speaking (routine steps). Returns (worked, results)."""
@@ -82,11 +89,14 @@ class Assistant:
         m = router.match(norm, command) if norm else None
         try:
             if m:
+                safety.before_input(m.action)
                 res = actions.run(m.action, m.args)
                 return not _failed(res), [res]
             plan = svc.brain.plan(command, "typed")
+            if not plan["actions"]:
+                return bool(plan.get("reply")), [plan["reply"]] if plan.get("reply") else []
             results = self._run_actions(plan["actions"], [])
-            return bool(plan["actions"]) and not any(_failed(r) for r in results), results
+            return not any(_failed(r) for r in results), results
         except Exception as e:
             log.warning("Routine step %r failed: %s", command, e)
             return False, []
@@ -109,6 +119,7 @@ class Assistant:
         except Exception:
             pass
         cfg = svc.config.get("panic", {})
+        self._panicked_at = time.time()         # requests said before the panic are dropped, not run after it
         svc.voice.stop()
         macros.abort("Stopped.")
         safety.cancel("aborted")
@@ -145,6 +156,9 @@ class Assistant:
                 svc.state.update(thinking=False)
 
     def _handle(self, item):
+        if item.created < self._panicked_at:
+            log.info("Dropped a request from before the panic")
+            return
         with safety.context(unattended=item.unattended):
             self._process(item)
 
@@ -184,12 +198,19 @@ class Assistant:
         if plain in (svc.config.get("panic", {}).get("voice_phrases") or []):
             return self.panic()
 
+        # "Cancel" during the shutdown warning is about the shutdown, whatever else is waiting.
+        if plain in POWER_CANCEL and power_auto.warning() and not item.unattended:
+            safety.hear(item, plain, by_name)
+            return self._respond(power_auto.power_when_cancel(), text, item.source, ["power_when_cancel"])
+
         # A big step waiting for "send it" / "confirm" (safety.py). Plain "yes" still answers an ordinary question.
         if not item.unattended:
             reply = safety.hear(item, plain, by_name, other_pending=bool(self._pending))
             if reply is not None:
                 if plain in safety.CANCEL:
                     self._pending = None
+                    if macros.abort():                  # "stop" / "cancel" also stops a macro that's running
+                        svc.voice.stop()
                 return self._respond(reply, text, item.source, ["approve"])
             if safety.is_phrase(plain) and not self._pending and not st.dictating and \
                     (explicit or by_name or st.in_conversation()):
@@ -217,6 +238,9 @@ class Assistant:
 
         if st.dictating and (explicit or st.effective_mode == ALWAYS_LISTENING) and not item.unattended:
             if plain in text_skill.ENTER_WORDS:
+                if safety.current() is not None:     # a card is up: Enter could send what it's asking about
+                    caption("Answer the card first. Say it again once it's up.", seconds=3)
+                    return
                 ok, why = safety.trusted(item, by_name)
                 if not ok:
                     caption(why or "That didn't sound like you, so I didn't press Enter.", seconds=3)
@@ -299,6 +323,9 @@ class Assistant:
         the rest isn't done (doing it would replace what's on the card)."""
         results = []
         for a in acts:
+            if safety.stopping() or safety.last_outcome() in ("cancelled", "expired", "replaced", "aborted"):
+                break                               # you said stop, or no to a big step: not the rest of the plan
+            safety.before_input(a["name"])          # inside a macro: still its window, and you haven't typed
             if safety.last_outcome() == "asked":
                 results.append("I'll do one thing at a time: OK this one first, then ask me for the rest.")
                 names.append("approve_one_at_a_time")

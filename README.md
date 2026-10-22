@@ -214,7 +214,13 @@ same window is still in front showing the same chat, and double-checks the recip
 the screen; if it's the wrong chat it stops. Gmail lets you undo for a few seconds after sending.
 
 Nothing scheduled can approve a big step. When a macro or command runs while nobody is there to answer ("at 7 pm run
-my morning macro"), big steps are skipped and you get a note about what was skipped.
+my morning macro"), big steps are skipped and you get a note about what was skipped. Messages and emails can't be
+scheduled at all (sending needs your OK when it happens), and "shut down the PC in an hour" asks for "confirm" now and
+warns you a minute before, so you can still say "cancel".
+
+To message someone new on Google Chat, Gem opens the "new chat" search and checks on screen that it really opened
+before typing their name; if it can't tell, it asks you to open the chat yourself. Only one question is ever open:
+a new one replaces the last, and "stop" or "cancel" also stops a macro that's running.
 
 Phrases, the waiting time and the "Gem, send it" rule are under `"safety"` in `settings.json`.
 

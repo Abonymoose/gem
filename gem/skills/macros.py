@@ -54,6 +54,7 @@ def _short(text, n=40):
 # ── Steps ────────────────────────────────────────────────────────────────────
 
 _NUM = r"(\d+(?:\.\d+)?)"
+_INPUT_STEP = re.compile(r"^(?:types?|press(?:es)?|hits?|taps?|(?:double |right )?clicks?)\b", re.I)
 _TIMES = {"twice": 2, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "ten": 10}
 
 
@@ -74,18 +75,20 @@ def parse_step(text):
     m = re.match(r"^(?:switch|switches|go back) to (?:the )?(.+?)(?: app| window)?$|^focus(?: on)? (?:the )?(.+?)"
                  r"(?: app| window)?$", t)
     if m:
+        app = m.group(1) or m.group(2)
         known = router.match(router.normalize(raw)[0], raw)
-        if not known or known.action in ("switch_to", "open_app", "restore_app"):   # "switch to headphones" isn't
-            return {"do": "focus", "app": m.group(1) or m.group(2)}
-        return {"do": "command", "text": raw}
+        if (known and known.action in ("switch_to", "open_app", "restore_app")) or \
+                (not known and (apps.app_windows(app) or apps.resolve_app(app)[1])):
+            return {"do": "focus", "app": app}
+        return {"do": "command", "text": raw}            # "switch to headphones", "focus on math": Gem or the AI
     m = re.match(r"^(?:type|types) (.+)$", raw, re.I | re.S)
-    if m and not re.match(r"^(?:this|that|what i say)(?: down)?$", m.group(1).lower()):
+    if m and not re.match(r"^(?:this|that|what i say|my away (?:note|message))(?: down)?$", m.group(1).lower()):
         text = m.group(1)
         q = re.match(r'^\s*(["“\'])(.*)(["”\'])\s*$', text, re.S)
         return {"do": "type", "text": q.group(2) if q else text}
     m = re.match(r"^(?:press|presses|hit|hits|tap|taps)(?: the)? (.+?)(?: keys?)?(?: (\d+|%s) times| (twice))?$"
                  % "|".join(_TIMES), t)
-    if m:
+    if m and parse_chord(m.group(1)):                    # "press play" / "press volume up" are Gem commands
         n = m.group(2) or m.group(3)
         times = int(n) if n and n.isdigit() else _TIMES.get(n or "", 1)
         return {"do": "keys", "keys": m.group(1), "chord": parse_chord(m.group(1)), "times": max(1, min(times, 20))}
@@ -99,8 +102,8 @@ def parse_step(text):
         kind = (m.group(1) or "").lower()
         return {"do": "click", "button": "right" if kind == "right " else "left", "double": kind == "double ",
                 "target": m.group(2).strip()}
-    m = re.match(r"^(?:ask me(?: first)?|check with me|confirm(?: with me)?|ask (?:before|first)|pause and ask)"
-                 r"(?: (?:before|then) (?:continuing|going on|you continue|you go on))?(?:[:,]? (.+))?$", t)
+    m = re.match(r"^(?:ask me first|ask me before (?:continuing|going on|you continue|you go on)|check with me|"
+                 r"confirm with me|confirm before (?:continuing|going on)|ask first|pause and ask)(?:[:,] (.+))?$", t)
     if m:
         return {"do": "checkpoint", "text": m.group(1) or ""}
     return {"do": "command", "text": raw}
@@ -119,6 +122,7 @@ class Run:
         self.steps = steps[:int(cfg().get("max_steps", 200) or 200)]
         self.unattended = unattended
         self.depth = 0               # how many macros deep the step being run is
+        self._input_ahead = False    # a later step types, presses or clicks (so it needs the right window)
         self.abort = threading.Event()
         self.reason = ""
         self.waiting = False         # waiting for the user's OK on a big step
@@ -143,7 +147,8 @@ class Run:
         svc.state.update(macro_running=self.name)
         caption("Running %s." % self.name, card=self.card)
         stopped = None
-        with safety.context(unattended=self.unattended, skipped=self.skipped, should_stop=self.abort.is_set):
+        with safety.context(unattended=self.unattended, skipped=self.skipped, should_stop=self.abort.is_set,
+                            before_input=self._ready_for_input):
             try:
                 self._run_steps(self.steps, top=True)
             except _Stop as e:
@@ -153,7 +158,7 @@ class Run:
                 stopped = "Sorry, %s stopped because something went wrong." % self.name
             finally:
                 release_modifiers()
-        svc.state.update(macro_running="")
+        svc.state.update(macro_running="", thinking=False)
         self._finish(stopped)
 
     def _run_steps(self, steps, top=False, depth=0):
@@ -165,7 +170,9 @@ class Run:
             self.depth = outer
 
     def _steps(self, steps, top, depth, delay):
+        inputs = [bool(_INPUT_STEP.match(s.strip())) for s in steps]
         for i, text in enumerate(steps):
+            self._input_ahead = any(inputs[i + 1:])
             self._check_abort()
             row = self.card["steps"][i] if top else None
             if row:
@@ -331,6 +338,8 @@ class Run:
 
     def _type(self, text, typed=None):
         hwnd = self._ready_for_input()
+        if safety.window_kind(hwnd) == "delete dialog":
+            raise _Stop("The box asking to delete files is in front, so I stopped %s." % self.name)
         release_modifiers()
         type_plain(text, soft_newlines=safety.window_kind(hwnd) == "messaging")   # never presses Enter
         self.last_typed = (hwnd, (typed[1] if typed and typed[0] == hwnd else "") + text)
@@ -350,15 +359,18 @@ class Run:
             self.last_typed = (hwnd, text + "\n")      # a new line in the same message
 
         def go():
-            if big:
-                self._unchanged(hwnd, title)
             release_modifiers()
-            for _ in range(s["times"]):
+            for i in range(s["times"]):
+                if big or i:
+                    self._unchanged(hwnd, title)      # before every press: same window, same chat
                 press(*chord)
                 time.sleep(0.05)
             return OK
         if not big:
-            go()
+            try:
+                go()
+            except ActionError as e:
+                raise _Stop("%s So I stopped %s." % (e, self.name))
             return "done"
         sending = big.startswith("Send")
         return self._gate(big, go, app=apps.friendly_name(hwnd).capitalize(), to=_short(title, 50),
@@ -447,9 +459,13 @@ class Run:
             return "done"
         if m and m.action in ("macro_record", "macro_auto", "macro_save", "quit_gem", "voice_train"):
             raise _Stop("“%s” can't be a step in a macro, so I stopped %s." % (text, self.name))
+        keys = svc.keys
+        if keys is not None and getattr(keys, "last_user_key", 0.0) > self.typing_since:
+            raise _Stop("You started typing, so I stopped %s." % self.name)
         before = foreground_window()
         before = (before, window_title(before))
         ok, results = svc.assistant.execute(text)
+        svc.state.update(thinking=False)
         outcome = safety.last_outcome()
         if outcome == "skipped":
             return "skipped"
@@ -467,14 +483,20 @@ class Run:
             if said:
                 say(said)                             # "Sent.", "Restarting in 10 seconds..."
         if not ok:
-            raise _Stop("“%s” didn't work%s, so I stopped %s." % (text, (": " + _short(said, 80)) if said else "",
-                                                                  self.name))
+            raise _Stop("“%s” didn't work%s, so I stopped %s." % (
+                text, (": " + _short(said, 80).rstrip(".!?")) if said else "", self.name))
         if m and m.action in ("open_app", "switch_to", "restore_app"):
             name = m.args.get("name", "")
-            if apps.resolve_site(name.lower()):
+            if not _has_own_window(name):            # a website, a folder or a Settings page
                 self._settle(before)
             else:
-                self._wait_for(name, 25.0)
+                try:
+                    self._wait_for(name, 25.0)
+                except _Stop:
+                    self._check_abort()
+                    if self._input_ahead:            # the next steps type or click there: don't guess
+                        raise
+                    self.target = 0
         elif m and m.action in ("open_url", "youtube", "web_search", "spotify_search", "open_latest_download",
                                 "find_file", "open_result", "open_folder", "open_settings"):
             self._settle(before)
@@ -492,6 +514,14 @@ class Run:
             if self.abort.wait(0.3):
                 self._check_abort()
         self.target = 0                               # nothing new came up: use whatever is in front next
+
+
+def _has_own_window(name):
+    """Opening this shows a window named after it (an app), not a browser tab, folder or Settings page."""
+    low = re.sub(r"^(?:the|my)\s+", "", (name or "").lower().strip())
+    m = re.match(r"^(.+?)\s+settings$", low)
+    return not (apps.resolve_site(low) or re.match(r"^(?:%s)(?:\s+folder)?$" % "|".join(apps.FOLDERS), low)
+                or (m and m.group(1) in apps.SETTINGS_PAGES) or low == "settings")
 
 
 def _plain_title(title):

@@ -74,6 +74,7 @@ def _watch(my_id, power, trigger, minutes):
             time.sleep(5)
     if not _still(my_id):
         return
+    job["warning_until"] = time.time() + WARNING_S + 5
     say("Heads up: I'll %s in a minute. Say cancel to stop me." % WORDS[power],
         card={"kind": "alert", "title": "%s in 60 seconds" % WORDS[power].capitalize(),
               "message": "Say cancel to stop."})
@@ -104,18 +105,19 @@ def power_when(power="shutdown", trigger="media_end", minutes=None):
         raise ActionError("I don't see a download in progress right now.")
     if safety.unattended():
         return safety.skip("%s later" % WORDS[power].capitalize())
-    if threading.current_thread().name == "macro":       # a macro step: same rule as the other power steps
-        return safety.ask("%s later" % WORDS[power].capitalize(),
-                          lambda: _plan(power, trigger, minutes), phrase="confirm")
-    return _plan(power, trigger, minutes)
+    return safety.ask("%s %s" % (WORDS[power].capitalize(), _when(trigger, minutes)),
+                      lambda: _plan(power, trigger, minutes), phrase="confirm")
+
+
+def _when(trigger, minutes):
+    return {"media_end": "when what you're watching ends", "download_done": "when your downloads finish",
+            "time": "in %s" % _mins(minutes or 0)}[trigger]
 
 
 def _plan(power, trigger, minutes):
     job.update(id=job["id"] + 1, action=power, trigger=trigger, since=time.time(), cancelled=False)
     threading.Thread(target=_watch, args=(job["id"], power, trigger, minutes), name="power-when", daemon=True).start()
-    what = {"media_end": "when what you're watching ends", "download_done": "when your downloads finish",
-            "time": "in %s" % _mins(minutes or 0)}[trigger]
-    text = "Okay, I'll %s %s. I'll warn you a minute before." % (WORDS[power], what)
+    text = "Okay, I'll %s %s. I'll warn you a minute before." % (WORDS[power], _when(trigger, minutes))
     if trigger == "time":
         return card("alarm", text, title="Then %s" % WORDS[power], at=time.time() + minutes * 60,
                     subtitle="In " + _mins(minutes))
@@ -129,6 +131,11 @@ def _mins(m):
 
 def pending():
     return not job["cancelled"] and job["action"] is not None
+
+
+def warning():
+    """The one-minute warning is up: "cancel" now means the shutdown."""
+    return pending() and time.time() < job.get("warning_until", 0)
 
 
 @action("power_when_cancel", "Cancel a pending 'shut down / sleep when done' plan.")

@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from .actions import ActionError, Failure
 from .cards import card
 from .runtime import caption, notify, say, svc
-from .winapi import window_class, window_process_name, window_title
+from .winapi import get_clipboard, window_class, window_process_name, window_title
 
 log = logging.getLogger("gem.safety")
 
@@ -42,9 +42,16 @@ MESSAGING_TITLES = re.compile(
 # Browser pages where Enter or a click can buy, pay, or change an account.
 RISKY_PAGES = re.compile(r"\b(?:checkout|check out|cart|basket|payment|pay|paypal|bank|banking|billing|order|purchase|"
                          r"transfer|wallet|account|security|password|settings|delete)\b", re.I)
+# A page title that names a document being edited ("Order of operations - Google Docs") isn't a shop or a bank.
+EDITORS = re.compile(r"- (?:google (?:docs|sheets|slides)|word|excel|powerpoint|notion|onenote|overleaf|dropbox paper|"
+                     r"microsoft word|microsoft excel)\b", re.I)
 TERMINALS = {"cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe", "wt.exe", "conhost.exe",
              "openconsole.exe", "mintty.exe", "bash.exe", "wsl.exe", "putty.exe", "alacritty.exe", "wezterm-gui.exe",
-             "powershell_ise.exe"}
+             "powershell_ise.exe", "conemu.exe", "conemu64.exe", "cmder.exe", "hyper.exe", "tabby.exe", "terminus.exe",
+             "kitty.exe", "fluent terminal.exe", "warp.exe"}
+# Actions that put keys or text into the window in front.
+INPUT_ACTIONS = {"type_text", "clipboard_paste", "text_tool", "away_note", "reply_draft", "reply_revise", "dictation",
+                 "video_seek", "video_key", "read_aloud", "copy_screen_text"}
 # Words on a button or link that mean clicking it does something you can't take back.
 RISKY_CLICK = re.compile(
     r"\b(?:send|post|submit|publish|tweet|reply|forward|share|delete|remove|erase|trash|bin|discard|empty|wipe|"
@@ -65,15 +72,27 @@ def cfg():
 # ── Who is asking ────────────────────────────────────────────────────────────
 
 @contextmanager
-def context(unattended=False, skipped=None, should_stop=None):
+def context(unattended=False, skipped=None, should_stop=None, before_input=None):
     """Mark everything run on this thread inside the block as started by the user or not (scheduled). should_stop
-    (a macro's abort) ends any wait for an answer inside it."""
-    old = (getattr(_local, "unattended", False), getattr(_local, "skipped", None), getattr(_local, "should_stop", None))
-    _local.unattended, _local.skipped, _local.should_stop = bool(unattended), skipped, should_stop
+    (a macro's abort) ends any wait for an answer inside it; before_input (a macro's window check) runs before any
+    action that types or pastes."""
+    keys = ("unattended", "skipped", "should_stop", "before_input")
+    old = [getattr(_local, k, None) for k in keys]
+    for k, v in zip(keys, (bool(unattended), skipped, should_stop, before_input)):
+        setattr(_local, k, v)
     try:
         yield
     finally:
-        _local.unattended, _local.skipped, _local.should_stop = old
+        for k, v in zip(keys, old):
+            setattr(_local, k, v)
+
+
+def before_input(action_name):
+    """Before an action puts keys or text into the window in front: inside a macro, check it's still the macro's
+    window and you haven't started typing (it stops the macro if not)."""
+    check = getattr(_local, "before_input", None)
+    if check and action_name in INPUT_ACTIONS:
+        check()
 
 
 def stops():
@@ -124,9 +143,10 @@ def window_kind(hwnd):
         return "messaging"
     if proc in BROWSERS and MESSAGING_TITLES.search(window_title(hwnd) or ""):
         return "messaging"
-    if proc in BROWSERS and RISKY_PAGES.search(window_title(hwnd) or ""):
+    title = window_title(hwnd) or ""
+    if proc in BROWSERS and RISKY_PAGES.search(title) and not EDITORS.search(title):
         return "risky page"
-    if proc in TERMINALS:
+    if proc in TERMINALS or (proc == "taskmgr.exe" and title.lower() == "create new task"):
         return "terminal"
     cls = window_class(hwnd)
     if cls == "#32770" and re.match(r"(?:delete|permanently delete|confirm (?:file|folder|multiple file) delete)",
@@ -156,11 +176,21 @@ def big_key(chord, hwnd):
         return "Press Enter on %s" % (window_title(hwnd) or "this page")[:60]
     if kind == "files" and (main == "delete" or keys == ["ctrl", "d"]):
         return "Delete the selected files" + (" for good" if "shift" in mods else "")
+    if kind == "files" and (keys in (["shift", "f10"], ["menu"])):
+        return "Open the file menu (it can delete)"
+    if kind == "terminal" and keys in (["ctrl", "v"], ["ctrl", "shift", "v"], ["shift", "insert"]) and \
+            re.search(r"[\r\n]", get_clipboard() or ""):
+        return "Paste (and run) the lines on the clipboard"
     if kind == "delete dialog" and (main in ("enter", "space") or keys in (["y"], ["alt", "y"])):
         return "Confirm deleting the files"
     if main == "delete" and mods >= {"ctrl", "shift"}:
         return "Clear browsing data"
     return None
+
+
+def paste_runs(text, hwnd):
+    """Pasting this here would run it: more than one line into a terminal."""
+    return window_kind(hwnd) in ("terminal", "delete dialog") and bool(re.search(r"[\r\n]", (text or "").strip()))
 
 
 def big_click(description, hwnd, at_position=False):
@@ -295,6 +325,8 @@ def ask(title, run, *, app="", to="", subject="", message="", lines=None, warnin
     blocking = threading.current_thread().name != "assistant"
     should_stop = should_stop or getattr(_local, "should_stop", None)
     req = Request(title, run, data, kind, on_cancel, blocking)
+    if svc.assistant is not None:
+        svc.assistant.drop_question()           # an ordinary yes/no question still open is dropped: one at a time
     with _lock:
         old, _current = _current, req
     if old is not None and old.finish(False, "replaced") and not old.blocking and \
@@ -331,6 +363,13 @@ def _expire(req):
         return
     if not req.blocking:
         say(req.not_done_note())
+
+
+def replace():
+    """Another question is about to be asked (an ordinary yes/no one): drop the waiting card so only one is open."""
+    req = current()
+    if req is not None and req.finish(False, "replaced") and not req.blocking:
+        caption(req.not_done_note(), seconds=3)
 
 
 def cancel(reason="cancelled"):

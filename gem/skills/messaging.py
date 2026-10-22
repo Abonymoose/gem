@@ -194,9 +194,10 @@ def _is_discord(hwnd):
 
 
 def _is_gchat(hwnd):
+    """Google Chat's own tab ("... - Google Chat", or Chat inside Gmail): not Teams, Twitch or any other "chat"."""
     title = (window_title(hwnd) or "").lower()
-    return window_process_name(hwnd) in safety.BROWSERS and bool(re.search(r"\b(?:google )?chat\b", title)) \
-        and "chatgpt" not in title
+    return window_process_name(hwnd) in safety.BROWSERS and \
+        bool(re.search(r"\bgoogle chat\b", title) or (re.search(r"\bchat\b", title) and "gmail" in title))
 
 
 def _bring(match, open_name=None, url=None, wait=25):
@@ -227,6 +228,22 @@ def _bring(match, open_name=None, url=None, wait=25):
 
 
 _started = threading.local()      # .stops: safety.stops() when this thread's send began
+
+
+def _open_new_tab(url, title_pattern, wait=25):
+    """Open a page and return the browser window that comes to the front with it (a new tab, or a new title)."""
+    before = {(h, t) for h, t, p in top_windows() if p in safety.BROWSERS}
+    webbrowser.open(url)
+    end = time.time() + wait
+    while time.time() < end:
+        time.sleep(0.5)
+        fg = foreground_window()
+        title = window_title(fg)
+        if window_process_name(fg) in safety.BROWSERS and (fg, title) not in before and \
+                re.search(title_pattern, title, re.I):
+            time.sleep(1.5)                          # let it finish loading
+            return fg
+    return 0
 
 
 def _check_front(hwnd, label):
@@ -277,6 +294,23 @@ def _look(app):
         log.exception("Looking at %s failed", app)
         return None
     return out if isinstance(out, dict) else None
+
+
+SEARCH = ("This is a screenshot of the user's Google Chat window. Is a box for finding a person or starting a new chat "
+          "open, with its text field ready to type in (not the message box of a conversation)? Reply with JSON only: "
+          "{\"open\": true} or {\"open\": false}. If unsure, false.")
+
+
+def _search_open():
+    """Google Chat's "new chat" search box is really open (a look at the screen), so typing a name there is safe."""
+    from ..brain import _parse_json
+    from .screen import data_url, grab
+    try:
+        img, _ = grab()
+        out = _parse_json(svc.brain.see(SEARCH, "Is the new-chat search open?", data_url(img), max_tokens=40))
+    except Exception:
+        return False
+    return isinstance(out, dict) and out.get("open") is True
 
 
 def _verify(hwnd, label, names, text, where):
@@ -341,6 +375,8 @@ def _ready_discord(handle, names, text):
         raise ActionError("I couldn't get Discord in front.")
     release_modifiers()
     if handle:
+        press("esc")                                 # close anything open, so Ctrl+K opens the switcher, not closes it
+        time.sleep(0.2)
         press("ctrl", "k")                           # quick switcher
         time.sleep(0.6)
         _check_front(hwnd, "Discord")
@@ -361,7 +397,7 @@ def _ready_discord(handle, names, text):
 
 
 def _ready_gchat(handle, names, text):
-    hwnd = _bring(_is_gchat, url="https://chat.google.com")
+    hwnd = _bring(_is_gchat) or _open_new_tab("https://chat.google.com", r"\bchat\b")
     if not hwnd:
         raise ActionError("I couldn't get Google Chat open in your browser.")
     release_modifiers()
@@ -369,6 +405,10 @@ def _ready_gchat(handle, names, text):
         press("ctrl", "shift", "k")                  # new chat: find a person
         time.sleep(1.3)
         _check_front(hwnd, "Google Chat")
+        if not _search_open():                       # otherwise the name (and Enter) would go into a chat
+            press("esc")
+            raise ActionError("I couldn't open a new chat safely. Open the chat with %s in Google Chat and ask me "
+                              "again." % (names[-1] if names else handle))
         type_text(handle)
         time.sleep(2.0)
         _check_front(hwnd, "Google Chat")
@@ -476,6 +516,7 @@ def send_email(to="", subject="", body=""):
     body = (body or "").strip()
     if not body:
         raise ActionError("What should the email say?")
+    _started.stops = safety.stops()
     address, name = _email_for(to)
     if not address:
         who = name or "them"
@@ -484,7 +525,8 @@ def send_email(to="", subject="", body=""):
     subject = (subject or "").strip() or _subject_for(body)
     if safety.unattended():
         return safety.skip("Email %s about “%s”" % (name or address, _short(subject)))
-    _started.stops = safety.stops()
+    if safety.stops() != _started.stops:
+        raise ActionError("Stopped.")
     hwnd, ready = _ready_gmail(address, subject, body)
     return safety.ask("Send email", lambda: _send_gmail(hwnd, ready), app="Gmail",
                       to=("%s <%s>" % (name, address)) if name else address, subject=subject, message=body,
@@ -510,8 +552,8 @@ def offer_send(text, what="reply"):
     Gem doesn't know how this app sends (then the user presses Enter themselves)."""
     hwnd = foreground_window()
     keys = send_keys(hwnd)
-    if not keys or safety.unattended():
-        return None
+    if not keys or safety.unattended() or threading.current_thread().name == "macro":
+        return None                              # in a macro the note is typed and the macro goes on
     label = apps.friendly_name(hwnd).capitalize() or "this app"
     ready = _plain_title(window_title(hwnd))
     rest = _key(ready)

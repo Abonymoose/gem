@@ -64,6 +64,8 @@ def _text_task(task, instruction, text, output):
     if output == "clipboard":
         set_clipboard(result)
         return "Done, it's on your clipboard."
+    if safety.paste_runs(result, foreground_window()):
+        raise ActionError("Pasting that here would run it, so it's on your clipboard instead.")
     paste_text(result)
     return None
 
@@ -72,8 +74,11 @@ def _text_task(task, instruction, text, output):
 def type_into_app(text=""):
     if not text:
         raise ActionError("What should I type?")
+    hwnd = foreground_window()
+    if safety.window_kind(hwnd) == "delete dialog":
+        raise ActionError("The box asking to delete files is in front, so I didn't type there.")
     release_modifiers()
-    _type(text, foreground_window())
+    _type(text, hwnd)
     return None
 
 
