@@ -99,6 +99,12 @@ DEFAULTS = {
         # Used only when Groq is rate limited or down, and only if its key is set (an environment variable,
         # or the Backup AI field in the dashboard). Any OpenAI-compatible service can be added here.
         "backups": [
+            # Cerebras' free tier runs the same gpt-oss-120b as Groq with a much bigger daily allowance (1M tokens,
+            # 5 requests a minute per model); its Qwen takes up to two images.
+            {"name": "Cerebras", "key_env": "CEREBRAS_API_KEY",
+             "url": "https://api.cerebras.ai/v1/chat/completions",
+             "models": ["gpt-oss-120b", "qwen-3.8-27b"], "vision_models": ["qwen-3.8-27b"],
+             "extra": {"reasoning_effort": "low"}},
             {"name": "Gemini", "key_env": "GEMINI_API_KEY",
              "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
              "models": ["gemini-flash-latest", "gemini-flash-lite-latest"], "vision_models": ["gemini-flash-latest"],
@@ -339,6 +345,12 @@ def load_settings():
     # App/site/process maps merge key-by-key so new defaults still appear.
     for key in ("apps", "processes", "websites"):
         merged[key] = {**DEFAULTS[key], **(user.get(key) or {})}
+    # Backup AI services merge by name, so a service added to Gem later still shows up.
+    saved = (user.get("ai") or {}).get("backups")
+    if isinstance(saved, list):
+        names = {b.get("name") for b in saved if isinstance(b, dict)}
+        merged["ai"]["backups"] = saved + [copy.deepcopy(b) for b in DEFAULTS["ai"]["backups"]
+                                           if b["name"] not in names]
     return merged
 
 

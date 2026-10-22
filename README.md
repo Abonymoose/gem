@@ -279,10 +279,12 @@ scripts. When the search is unavailable, Gem answers from what the AI knows and 
 Each model on the free tier takes about 8,000 tokens a minute, and every question sends Gem's list of actions
 along, so a busy minute can run out: a backup AI key (below) is the best fix.
 
-**Backup AI.** When every Groq model is at its limit, Gem can switch to Gemini or OpenRouter (both have free
-keys: [Gemini](https://aistudio.google.com/apikey), [OpenRouter](https://openrouter.ai/keys)). Paste a key in
-the Gem window under **AI & hearing**, or set `GEMINI_API_KEY` / `OPENROUTER_API_KEY` like the Groq key. Gemini
-also covers screen questions. Any OpenAI-compatible service can be added under `"ai"` → `"backups"`. The same
+**Backup AI.** When every Groq model is at its limit, Gem can switch to Cerebras, Gemini or OpenRouter (all
+have free keys: [Cerebras](https://cloud.cerebras.ai), [Gemini](https://aistudio.google.com/apikey),
+[OpenRouter](https://openrouter.ai/keys)). Cerebras is the roomiest: the same `gpt-oss-120b` with a million
+tokens a day (5 requests a minute per model). Paste a key in the Gem window under **AI & hearing**, or set
+`CEREBRAS_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` like the Groq key. Cerebras and Gemini also cover
+screen questions. Any OpenAI-compatible service can be added under `"ai"` → `"backups"`. The same
 page shows how much of today's allowance each model has used.
 
 ### Panic hotkey

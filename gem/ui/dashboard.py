@@ -1203,7 +1203,9 @@ class AIPage(Page):
             row.addWidget(button("Save", cb=lambda _=False, n=env: self._save_key(n)))
             lay.addLayout(row)
             self.keys[env] = (e, status)
-        links = QLabel("Free keys: <a style='color:#c4a0f0' href='https://aistudio.google.com/apikey'>Gemini</a> "
+        links = QLabel("Free keys: <a style='color:#c4a0f0' href='https://cloud.cerebras.ai'>Cerebras</a> "
+                       "(API Keys in the menu) &nbsp;·&nbsp; "
+                       "<a style='color:#c4a0f0' href='https://aistudio.google.com/apikey'>Gemini</a> "
                        "&nbsp;·&nbsp; <a style='color:#c4a0f0' href='https://openrouter.ai/keys'>OpenRouter</a>")
         links.setObjectName("Faint")
         links.setOpenExternalLinks(True)
