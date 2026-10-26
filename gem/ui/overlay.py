@@ -54,6 +54,7 @@ class CommandBar(QWidget):
         self.ctrl = ctrl
         self.history = []
         self.index = 0
+        self.heard = ""             # what Gem just heard you say, offered to fix and resend
         self.resize(self.WIDTH + 40, 92)
         self.edit = QLineEdit(self)
         left = 20 + self.LOGO_X + self.LOGO_R + self.TEXT_GAP
@@ -77,6 +78,11 @@ class CommandBar(QWidget):
         p.setPen(QPen(T.alpha(T.SOFT, 0.35), 1.2))
         p.drawRoundedRect(box, 28, 28)
         self.ctrl.island.crystal.draw(p, box.left() + self.LOGO_X, box.center().y(), self.LOGO_R)
+        if self.heard:
+            p.setFont(T.font(11))
+            p.setPen(T.alpha(T.SOFT, 0.85))
+            p.drawText(QRectF(20, 74, self.WIDTH, 18), Qt.AlignCenter,
+                       "What I heard: fix it and press Enter, or just type something new")
         p.end()
 
     def eventFilter(self, obj, e):
@@ -87,6 +93,9 @@ class CommandBar(QWidget):
             if e.key() in (Qt.Key_Up, Qt.Key_Down) and self.history:
                 self.index = max(0, min(len(self.history), self.index + (-1 if e.key() == Qt.Key_Up else 1)))
                 self.edit.setText(self.history[self.index] if self.index < len(self.history) else "")
+                if self.heard:
+                    self.heard = ""                 # picking an earlier command: not a fix of what was heard
+                    self.update()
                 return True
         if e.type() == e.Type.FocusOut:
             QTimer.singleShot(120, self._maybe_close)
@@ -100,6 +109,12 @@ class CommandBar(QWidget):
         self.move(x - self.width() // 2, y)
         self.edit.clear()
         self.index = len(self.history)
+        # Right after Gem misheard you: what it heard, selected, so typing replaces it and the arrows edit it.
+        self.heard = svc.assistant.recent_voice() if svc.assistant else ""
+        if self.heard:
+            self.edit.setText(self.heard)
+            self.edit.selectAll()
+        self.update()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -112,10 +127,13 @@ class CommandBar(QWidget):
 
     def _submit(self):
         text = self.edit.text().strip()
+        heard, self.heard = self.heard, ""
         self.hide()
         if text:
             self.history.append(text)
-            if svc.assistant:
+            if svc.assistant and heard:
+                svc.assistant.resend(heard, text)
+            elif svc.assistant:
                 svc.assistant.submit_text(text)
 
 

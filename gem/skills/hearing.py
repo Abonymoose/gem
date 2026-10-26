@@ -4,6 +4,7 @@
 "No, I said Spotify" runs that instead of what Gem heard; "I said Spotify, not spot if I" also learns the fix
 and re-runs your last request with it corrected.
 """
+import difflib
 import logging
 import re
 import time
@@ -58,6 +59,34 @@ def hearing_teach(heard, meant):
     with store as data:
         data.setdefault("fixes", {})[heard] = meant
     return "Got it. When I hear %s, I'll take it as %s." % (heard, meant)
+
+
+# Too common to learn a fix for from one edited word.
+_COMMON = {"the", "a", "an", "to", "and", "or", "of", "in", "on", "at", "for", "it", "is", "my", "me", "you", "your",
+           "this", "that", "i", "we", "be", "do", "go", "up", "off", "can", "please", "what", "how"}
+
+
+def learn_from_edit(heard, fixed):
+    """You fixed what Gem heard in the typing bar. One word or short phrase swapped the same way twice is learned
+    (once could be a change of mind). Returns what to tell you, or None."""
+    a = _clean(heard).lower().split()
+    b = _clean(fixed).split()
+    ops = [o for o in difflib.SequenceMatcher(None, a, [w.lower() for w in b]).get_opcodes() if o[0] != "equal"]
+    if len(ops) != 1 or ops[0][0] != "replace":
+        return None
+    _, i1, i2, j1, j2 = ops[0]
+    old, new = " ".join(a[i1:i2]), " ".join(b[j1:j2])
+    if i2 - i1 > 3 or j2 - j1 > 3 or old in ("gem", "jem") or (i2 - i1 == 1 and (len(old) < 3 or old in _COMMON)):
+        return None
+    key = "%s -> %s" % (old, new.lower())
+    with store as data:
+        seen = data.setdefault("edits", {})
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] < 2:
+            return None
+        seen.pop(key)
+    hearing_teach(old, new)
+    return "I'll hear %s as %s from now on." % (old, new)
 
 
 @action("hearing_forget", "Stop applying a taught hearing fix, or all of them.", "heard?: str")

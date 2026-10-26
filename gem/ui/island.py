@@ -313,7 +313,10 @@ class Island(QWidget):
             act = {"kind": "recording", "label": "Recording macro",
                    "value": _countdown(time.time() - st.macro_recording)}
         if act is None and getattr(st, "macro_running", ""):
-            act = {"kind": "macro", "label": "Running " + st.macro_running, "value": ""}
+            act = {"kind": "macro", "label": st.macro_running.capitalize(), "value": getattr(st, "macro_step", "")}
+        if act is None and svc.brain is not None and getattr(svc.brain, "busy_until", 0) > time.time() + 0.5:
+            # Every AI model is at its per-minute limit: say when it's back instead of failing quietly.
+            act = {"kind": "busy", "label": "AI busy", "value": _countdown(svc.brain.busy_until - time.time())}
         if act is None:
             try:
                 from ..skills import timers
@@ -611,6 +614,19 @@ class Island(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(T.alpha(QColor(167, 139, 250), 0.7 + 0.3 * math.sin(self.t * 4)))
             p.drawEllipse(QPointF(ix, cy), 4.5, 4.5)
+        elif kind == "busy":
+            # An hourglass in amber: waiting on the AI's per-minute allowance.
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.alpha(QColor(251, 191, 36), 0.75 + 0.25 * math.sin(self.t * 3)))
+            glass = QPainterPath()
+            glass.moveTo(ix - 4.5, cy - 6.5)
+            glass.lineTo(ix + 4.5, cy - 6.5)
+            glass.lineTo(ix, cy)
+            glass.lineTo(ix + 4.5, cy + 6.5)
+            glass.lineTo(ix - 4.5, cy + 6.5)
+            glass.lineTo(ix, cy)
+            glass.closeSubpath()
+            p.drawPath(glass)
         elif kind == "music":
             p.setPen(Qt.NoPen)
             for k in range(3):

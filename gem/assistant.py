@@ -54,6 +54,7 @@ class Assistant:
         self.on_quit = on_quit
         self.last_heard = deque(maxlen=20)
         self.last_heard_at = 0.0
+        self.last_voice = ("", 0.0)     # the last spoken request Gem acted on, for fixing it in the typing bar
         self._queue = queue.Queue()
         self._pending = None            # (callback, expires_at)
         self._panicked_at = 0.0
@@ -79,6 +80,19 @@ class Assistant:
         self._pending = (callback, time.time() + timeout)
         say(question, card={"kind": "confirm"})
         svc.state.update(last_reply_at=time.time())
+
+    def recent_voice(self, seconds=60):
+        """What Gem heard you say last, if it was in the last minute (the typing bar offers it to fix)."""
+        text, at = self.last_voice
+        return text if text and time.time() - at < seconds else ""
+
+    def resend(self, heard, text):
+        """You fixed what Gem heard in the typing bar: run the fixed version, and learn a fix made twice."""
+        self.last_voice = ("", 0.0)
+        learned = hearing.learn_from_edit(heard, text)
+        if learned:
+            caption(learned, seconds=3)
+        self.submit_text(text)
 
     def drop_question(self):
         """Forget an open yes/no question (a "send it" / "confirm" card replaces it)."""
@@ -384,6 +398,8 @@ class Assistant:
             say(spoken, card=card)
         if action_names != ["snooze"]:
             svc.state.update(last_reply_at=time.time())
+        if source in ("ptt", "open"):
+            self.last_voice = (text, time.time())
         svc.brain.remember_exchange(text, source, str(spoken or ""), action_names, acts)
         automemory.consider(text, action_names, source)
         if spoken or action_names:

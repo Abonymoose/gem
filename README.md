@@ -81,6 +81,11 @@ Everything returns to normal when the call ends.
 
 Press **Ctrl + Alt + Space** (or hold Ctrl over the island and click) to open a command bar and type a
 request. Handy in calls. Up and Down recall what you typed before. Right-click the island for a quick menu.
+Within a minute of Gem mishearing you, the bar opens with what it heard, ready to fix: correct the word and press
+Enter. Fix the same word the same way twice and Gem learns it.
+
+When every AI model is at its per-minute limit, the island shows **AI busy** with a countdown to when it's back
+(built-in commands keep working), and when a backup service takes over it says so.
 
 ## What Gem can do
 
@@ -211,7 +216,10 @@ that sends) or **"confirm"** (for everything else). "Yes" or "okay" isn't enough
 - running a plan Gem worked out itself, or a macro Gem wrote for you the first time it runs.
 
 One big step at a time: if you ask for two messages at once, Gem gets the first ready and asks you again for the
-second after you've answered. Typing and dictation never press Enter where Enter would send or run something; say
+second after you've answered. Inside a macro, say **"confirm all"** to OK that step and the same step again for the
+rest of that run (say, every click in Discord); sending, deleting, power and your own "ask me first" steps still ask
+every time. The island shows how far a macro has got ("Demo · 3 of 7"). With push-to-talk, near misses like
+"conform" count as "confirm". Typing and dictation never press Enter where Enter would send or run something; say
 "press enter" in dictation if you mean it.
 
 If Gem has learned your voice ("learn my voice"), it has to be your voice saying it. In always-listening mode

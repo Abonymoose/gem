@@ -168,6 +168,7 @@ class Brain:
         self.speaker = None             # set when a known person other than the user is talking
         self.last_service = "Groq"      # who answered last, for the dashboard
         self._plain = set()             # backup models that refused extra options
+        self.busy_until = 0.0           # every model at its limit until then (the island counts it down)
 
     @property
     def key(self):
@@ -251,10 +252,14 @@ class Brain:
         if not self.available():
             raise BrainUnavailable("Set the GROQ_API_KEY environment variable so I can answer that.")
         last_error = "no model available"
+        slots = []
         for service, url, key, model, extra in self._routes(models, vision, groq_only=bool(tools)):
             groq = extra is None
             slot = model if groq else "%s:%s" % (service, model)
+            slots.append(slot)
             if self._cooldown.get(slot, 0) > time.time():
+                if last_error == "no model available":
+                    last_error = "rate limited"
                 continue
             if groq:
                 body = self._body(model, messages, json_mode, max_tokens, temperature, tools)
@@ -309,12 +314,24 @@ class Brain:
                 continue
             if service != self.last_service:
                 log.info("Answering with %s (%s)", service, model)
+                if service != "Groq":
+                    from .runtime import caption
+                    caption("Groq is busy, so %s is answering" % service, seconds=3)
                 self.last_service = service
+            self.busy_until = 0.0
             return (message if full else content), slot
         if "network" in last_error:
             raise BrainUnavailable("I'm offline right now, so I can only do the basics: timers, alarms, volume, "
                                    "music and apps.")
         if "rate limited" in last_error:
+            # When the first model comes back: the island counts down to it.
+            ready = min((self._cooldown.get(s, 0) for s in slots), default=0)
+            wait = max(1, int(round(ready - time.time()))) if ready > time.time() else 0
+            if wait and not tools and not vision:         # the planner's models: the ones answers wait on
+                self.busy_until = max(self.busy_until, time.time() + wait)
+            if wait:
+                raise BrainUnavailable("The AI is busy for about %d seconds. Timers, music, volume and apps still "
+                                       "work." % wait)
             raise BrainUnavailable("I've hit the free AI limit for the moment. Basic commands still work; try "
                                    "questions again in a minute.")
         raise BrainUnavailable("The AI service isn't responding right now.")

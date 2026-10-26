@@ -129,6 +129,7 @@ class Run:
         self.target = 0              # the window the macro is working in
         self.last_typed = None       # (window, text) the step before typed, for the "send what's typed" card
         self.skipped = []
+        self.approved_all = set()    # big steps you said "confirm all" to: not asked again in this run
         self.typing_since = time.monotonic()
         self.card = {"kind": "macro", "name": name, "done": False, "current": 0, "note": "",
                      "steps": [{"text": s, "state": "pending"} for s in self.steps]}
@@ -148,7 +149,7 @@ class Run:
         caption("Running %s." % self.name, card=self.card)
         stopped = None
         with safety.context(unattended=self.unattended, skipped=self.skipped, should_stop=self.abort.is_set,
-                            before_input=self._ready_for_input):
+                            before_input=self._ready_for_input, approved_all=self.approved_all):
             try:
                 self._run_steps(self.steps, top=True)
             except _Stop as e:
@@ -158,7 +159,7 @@ class Run:
                 stopped = "Sorry, %s stopped because something went wrong." % self.name
             finally:
                 release_modifiers()
-        svc.state.update(macro_running="", thinking=False)
+        svc.state.update(macro_running="", macro_step="", thinking=False)
         self._finish(stopped)
 
     def _run_steps(self, steps, top=False, depth=0):
@@ -178,6 +179,7 @@ class Run:
             if row:
                 self.card["current"] = i
                 row["state"] = "running"
+                svc.state.update(macro_step="%d of %d" % (i + 1, len(steps)))     # shown in the island
             safety.reset_outcome()
             try:
                 state = self._step(text, depth)
@@ -243,7 +245,7 @@ class Run:
             return self._click(s)
         if do == "checkpoint":
             if self._gate(s["text"] or "Keep going with %s" % self.name, lambda: OK, phrase="confirm",
-                          chip="Keep going") == "skipped":
+                          chip="Keep going", per_run=False) == "skipped":     # you asked to be asked here
                 raise _Stop("I stopped %s at “ask me first” because nobody was here to OK it." % self.name)
             return "done"
         return self._command(s["text"], depth)

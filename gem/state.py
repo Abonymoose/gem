@@ -36,6 +36,7 @@ class State:
         self.last_reply_at = 0.0
         self.last_speech_end = 0.0
         self.macro_running = ""      # name of the macro being run ("" = none)
+        self.macro_step = ""         # how far it is: "3 of 7"
         self.macro_recording = 0.0   # epoch seconds a macro recording started (0 = not recording)
 
     # ── Change notification ──────────────────────────────────────────────────

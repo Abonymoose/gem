@@ -59,6 +59,11 @@ RISKY_CLICK = re.compile(
     r"transfer|withdraw|confirm|accept|agree|approve|allow|grant|sign out|log out|logout|sign off|leave|kick|ban|"
     r"block|report|reset|overwrite|deactivate|cancel (?:my |the )?(?:subscription|order|account|plan))\b", re.I)
 
+# Big steps "confirm all" never covers: each one is asked on its own.
+ALWAYS_ASK = re.compile(r"\b(?:shut ?down|restart|sleep|hibernate|sign (?:you )?out|log ?out|delete|power)\b", re.I)
+CONFIRM_ALL = {"confirm all", "confirm all of them", "confirm them all", "confirm the rest", "confirm for all",
+               "confirm everything", "confirm all steps", "yes to all", "confirm all of it"}
+
 _lock = threading.RLock()
 _current = None                 # the Request waiting for an answer
 _local = threading.local()      # per thread: unattended, outcome, skipped, should_stop
@@ -72,13 +77,14 @@ def cfg():
 # ── Who is asking ────────────────────────────────────────────────────────────
 
 @contextmanager
-def context(unattended=False, skipped=None, should_stop=None, before_input=None):
+def context(unattended=False, skipped=None, should_stop=None, before_input=None, approved_all=None):
     """Mark everything run on this thread inside the block as started by the user or not (scheduled). should_stop
     (a macro's abort) ends any wait for an answer inside it; before_input (a macro's window check) runs before any
-    action that types or pastes."""
-    keys = ("unattended", "skipped", "should_stop", "before_input")
+    action that types or pastes. approved_all (a macro run's set): titles of big steps the user said "confirm all"
+    to, which aren't asked again inside the block."""
+    keys = ("unattended", "skipped", "should_stop", "before_input", "approved_all")
     old = [getattr(_local, k, None) for k in keys]
-    for k, v in zip(keys, (bool(unattended), skipped, should_stop, before_input)):
+    for k, v in zip(keys, (bool(unattended), skipped, should_stop, before_input, approved_all)):
         setattr(_local, k, v)
     try:
         yield
@@ -278,6 +284,7 @@ class Request:
         self.done = threading.Event()
         self.approved = False
         self.reason = ""
+        self.all_set = None                 # a macro run's "confirm all" set, when this step can be OK'd for the run
 
     def finish(self, approved, reason=""):
         global _current
@@ -324,7 +331,7 @@ def current():
 
 
 def ask(title, run, *, app="", to="", subject="", message="", lines=None, warning="", phrase="send it", chip=None,
-        on_cancel=None, should_stop=None):
+        on_cancel=None, should_stop=None, per_run=True):
     """Ask before a big step and only do it (run()) once the user says the phrase. phrase is "send it" for sending
     and "confirm" for everything else (the user's own phrases from settings are shown).
 
@@ -336,12 +343,21 @@ def ask(title, run, *, app="", to="", subject="", message="", lines=None, warnin
         return skip(title)
     kind = "send it" if phrase == "send it" else "confirm"
     seconds = float(cfg().get("confirm_seconds", 45) or 45)
-    data = {"title": title, "app": app, "to": to, "subject": subject, "message": message, "lines": list(lines or []),
-            "warning": warning, "hint": hint(kind), "seconds": seconds,
-            "chip": chip or ("Send it" if kind == "send it" else "Confirm")}
     blocking = threading.current_thread().name != "assistant"
+    # Inside a macro, "confirm all" OKs the same big step (same title: same kind, same app) for the rest of the run.
+    # Never sending, deleting, power or an "ask me first" checkpoint (per_run=False): those always ask.
+    all_set = getattr(_local, "approved_all", None) if blocking and per_run and kind == "confirm" and \
+        not ALWAYS_ASK.search(title) else None
+    if all_set is not None and title in all_set:
+        log.info("Big step %r: OK'd for the rest of this macro", title)
+        _local.outcome = "approved"
+        return Request(title, run, {}, kind, on_cancel, blocking).go()
+    data = {"title": title, "app": app, "to": to, "subject": subject, "message": message, "lines": list(lines or []),
+            "warning": warning, "seconds": seconds, "chip": chip or ("Send it" if kind == "send it" else "Confirm"),
+            "hint": hint(kind) + (" · “confirm all” for the rest of this macro" if all_set is not None else "")}
     should_stop = should_stop or getattr(_local, "should_stop", None)
     req = Request(title, run, data, kind, on_cancel, blocking)
+    req.all_set = all_set
     if svc.assistant is not None:
         svc.assistant.drop_question()           # an ordinary yes/no question still open is dropped: one at a time
     with _lock:
@@ -372,6 +388,9 @@ def _question(title, app, to, req):
     on = (" on %s" % app) if app and app.lower() not in title.lower() else ""
     if req.kind == "send it":
         return "Ready to send%s%s. Say %s when it looks right, or cancel." % (where, on, _say_it(req.phrase))
+    if req.all_set is not None:
+        return "%s%s? Say %s, or %s all for the rest of this macro, or cancel." % (
+            title.rstrip(".?"), on, _say_it(req.phrase), req.phrase)
     return "%s%s? Say %s when you're sure, or cancel." % (title.rstrip(".?"), on, _say_it(req.phrase))
 
 
@@ -437,7 +456,16 @@ def hear(item, plain, by_name, other_pending=False):
             caption("Cancelled.", seconds=2)
             return ""
         return req.not_done_note()
-    if getattr(item, "source", "") == "ptt" and not is_phrase(plain) and _sounds_like(plain, req.phrase):
+    ptt = getattr(item, "source", "") == "ptt"
+    # "Confirm all": this step, and the same step again later in this macro run.
+    whole = plain in CONFIRM_ALL or plain == req.phrase + " all" or (
+        ptt and plain.endswith(" all") and _sounds_like(plain[:-4], req.phrase))
+    if whole:
+        if req.all_set is None:
+            return _again(req, "Confirm all works for steps in a macro. Say %s for this one, or cancel." %
+                          _say_it(req.phrase))
+        plain = req.phrase
+    elif ptt and not is_phrase(plain) and _sounds_like(plain, req.phrase):
         log.info("Big step %r: heard %r as %r (push-to-talk)", req.title, plain, req.phrase)
         plain = req.phrase
     if is_phrase(plain):
@@ -449,10 +477,12 @@ def hear(item, plain, by_name, other_pending=False):
         if not ok:
             log.info("Big step %r: refused an answer (%s)", req.title, why or "not the user")
             return _again(req, why) if why else None
+        if whole:
+            req.all_set.add(req.title)
         if not req.finish(True):
             return None
         if req.blocking:
-            caption("Okay.", seconds=1.5)
+            caption("Okay, for the rest of this macro." if whole else "Okay.", seconds=1.5)
             return ""
         return req.go()
     if plain in NOT_ENOUGH and not other_pending:
