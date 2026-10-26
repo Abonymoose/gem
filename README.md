@@ -7,9 +7,11 @@ Gem runs common commands instantly on your PC and uses Groq's free AI models for
 
 Gem lives in a **Dynamic Island**: a small black pill hugging the very top of your screen, like on an iPhone.
 
-- **Idle**: a tiny pill with Gem's crystal. Clicks pass straight through it to whatever is underneath; rest the
-  mouse on it for a moment to make it clickable (click to type, right-click for a menu). It tucks itself away
-  during fullscreen video and games.
+- **Idle**: a tiny pill with Gem's crystal, slightly see-through (Settings → Look & sound → island opacity).
+  Move the mouse over it (or over an answer card) and it fades almost away so you can see and click what's
+  underneath, like a browser tab. Hold **Ctrl** while hovering to make it clickable (click to type, right-click
+  for a menu), or switch Settings back to showing the controls on hover. It tucks itself away during fullscreen
+  video and games.
 - **Live activities**: a running timer counts down in the pill; it also shows your next class when it's 15
   minutes away, a running stopwatch, focus time left, the song playing in Spotify, when you're away, and when
   you're on a call or Gem is in quiet time.
@@ -77,7 +79,7 @@ Everything returns to normal when the call ends.
 
 ### Typing instead of talking
 
-Press **Ctrl + Alt + Space** (or rest the mouse on the island and click) to open a command bar and type a
+Press **Ctrl + Alt + Space** (or hold Ctrl over the island and click) to open a command bar and type a
 request. Handy in calls. Up and Down recall what you typed before. Right-click the island for a quick menu.
 
 ## What Gem can do
