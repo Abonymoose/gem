@@ -1330,6 +1330,9 @@ FIELDS = [
     ("Voice", "Speak during calls", "voice.speak_in_calls", "bool", None, False),
     ("Voice", "Speak in gaming mode", "voice.speak_in_gaming", "bool", None, False),
     ("Look & sound", "Show the island when Gem is idle", "appearance.island_when_idle", "bool", None, False),
+    ("Look & sound", "Island opacity when idle", "appearance.island_opacity", "slider", (20, 100), False),
+    ("Look & sound", "When the mouse is over the island", "appearance.island_hover", "choice",
+     [("Fade and let clicks through (Ctrl: controls)", "see_through"), ("Show Gem's controls", "controls")], False),
     ("Look & sound", "Hide the island in fullscreen video and games", "appearance.hide_in_fullscreen", "bool", None, False),
     ("Look & sound", "How long answers stay on screen", "appearance.card_seconds", "choice",
      [("Short", 0.7), ("Normal", 1.0), ("Long", 1.5), ("Extra long", 2.2)], False),
@@ -1464,6 +1467,8 @@ class SettingsPage(Page):
             row.addWidget(w)
             if path in ("voice.piper_voice", "voice.edge_voice"):
                 row.addWidget(button("Test", cb=lambda _=False, p=path: self._test_voice(p)))
+            if path == "appearance.island_opacity":     # see it change while dragging; Save keeps it
+                w.valueChanged.connect(lambda v: svc.config.setdefault("appearance", {}).update(island_opacity=v / 100.0))
             sections[section].addLayout(row)
 
         f, lay = card_frame()

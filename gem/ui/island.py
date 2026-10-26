@@ -89,6 +89,7 @@ class Island(QWidget):
         self.toast_until = 0.0
         self.suppress_until = 0.0
         self.interactive = False
+        self.ghost = False              # the mouse is over it: faded, and clicks go to what's behind
         self._hover_since = None
         self._left_since = None
         self.activity = None
@@ -386,6 +387,10 @@ class Island(QWidget):
         pos = QCursor.pos()
         rect = self.island_rect_global().adjusted(-6, 0, 6, 6)
         inside = rect.contains(QPointF(pos))
+        # "see_through": the mouse over the island fades it and clicks go to what's behind (a tab, a title bar);
+        # hold Ctrl for its controls. "controls": hovering opens the controls, as before.
+        see_through = (svc.config.get("appearance") or {}).get("island_hover", "see_through") == "see_through"
+        ctrl = bool(_u32.GetAsyncKeyState(0x11) & 0x8000)
         if self.interactive:
             if inside or self.ctrl.menu_open:
                 self._left_since = None
@@ -394,13 +399,16 @@ class Island(QWidget):
                 if now - self._left_since > 0.3:
                     self.interactive = False
                     self._left_since = None
-        elif inside and mode in ("idle", "activity", "toast"):
+        elif inside and mode in ("idle", "activity", "toast") and (ctrl or not see_through):
             self._hover_since = self._hover_since or now
-            if now - self._hover_since > 0.45:
+            if now - self._hover_since > (0.12 if ctrl else 0.45):
                 self.interactive = True
                 self._hover_since = None
         else:
             self._hover_since = None
+        near = self.island_rect_global().adjusted(-14, 0, 14, 14).contains(QPointF(pos))
+        self.ghost = see_through and near and not self.interactive and not ctrl and \
+            mode in ("idle", "activity", "toast", "card", "pending")
         self.set_clickthrough(not self.interactive)
 
     def mousePressEvent(self, e):
@@ -443,8 +451,12 @@ class Island(QWidget):
         self.h.step(th, dt)
         self.r.step(tr, dt)
         self.h.x = max(0.0, self.h.x)
-        want_opacity = 0.0 if mode == "hidden" else 1.0
-        self.opacity += (want_opacity - self.opacity) * (1 - math.exp(-(14 if want_opacity else 8) * dt))
+        # Resting (idle, a live activity) it's as see-through as set; anything new is shown in full.
+        rest = min(1.0, max(0.2, float((svc.config.get("appearance") or {}).get("island_opacity", 1.0) or 1.0)))
+        want_opacity = 0.0 if mode == "hidden" else 0.12 if self.ghost else \
+            rest if mode in ("idle", "activity") else 1.0
+        speed = 20 if self.ghost else 14 if want_opacity >= self.opacity else 8
+        self.opacity += (want_opacity - self.opacity) * (1 - math.exp(-speed * dt))
 
         level = svc.listener.level if (svc.listener and st.key_held) else 0.0
         self.levels.append(min(1.0, level * 3.2))
@@ -465,7 +477,8 @@ class Island(QWidget):
             self.update()
         elif self.isVisible():
             self.hide()
-        animating = abs(self.w.v) + abs(self.h.v) > 1 or mode not in ("idle", "hidden", "activity") or bool(self.fx)
+        animating = abs(self.w.v) + abs(self.h.v) > 1 or mode not in ("idle", "hidden", "activity") or \
+            bool(self.fx) or abs(want_opacity - self.opacity) > 0.01
         return visible, animating
 
     # ── Painting ─────────────────────────────────────────────────────────────
@@ -539,7 +552,7 @@ class Island(QWidget):
     # Row helpers -------------------------------------------------------------
 
     def _crystal(self, p, x, cy, r):
-        self.crystal.draw(p, x, cy, r)
+        self.crystal.draw(p, x, cy, r, opacity=p.opacity())      # fades with the island
 
     def _text(self, p, x, cy, w, text, font=F_ROW, color=T.TEXT, align=Qt.AlignLeft):
         p.setFont(font)

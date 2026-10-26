@@ -277,6 +277,8 @@ DEFAULTS = {
 
     "appearance": {
         "island_when_idle": True,             # keep the tiny pill at the top when nothing is happening
+        "island_opacity": 0.85,               # how solid the island is while idle or showing a timer/song
+        "island_hover": "see_through",        # mouse over it: "see_through" (fade, clicks pass) or "controls"
         "hide_in_fullscreen": True,           # tuck it away during fullscreen video and games
         "card_seconds": 1.0,                  # multiplier for how long answers stay on screen
         "screen_highlights": True,            # outline what Gem is talking about when it looks at your screen
