@@ -345,11 +345,16 @@ SUMMARY_PROMPT = (
     "These are notes from a call or class. Lines marked You are the user; Others are everyone else (the PC's sound). "
     "Write the top of a plain-text notes file, exactly in this shape:\n"
     "TITLE: a short title\n\nSUMMARY\n- three to six short points\n\nACTION ITEMS\n- what needs doing, by whom "
-    "and by when (or \"- None\")\n\nDATES\n- deadlines, meetings and dates mentioned (or \"- None\")\n"
+    "and by when (or \"- None\")\n\nDATES\n- deadlines, meetings and dates mentioned (or \"- None\")\n\nREMINDERS\n"
+    "- YYYY-MM-DD HH:MM | what to do, words that follow \"remind you to\", like \"hand in the science slides\"\n"
+    "REMINDERS has a line for each thing coming up (homework or work due, a class, meeting or test), at most 5, or "
+    "\"- None\". "
+    "Work out the real date and time from when the call started; remind 10 minutes before a class or meeting, "
+    "and at 6 PM the day before something due (a couple of hours before, if that's already past).\n"
     "No markdown, no bold, nothing else.")
 
 
-def _summary(lines):
+def _summary(lines, started):
     text = "\n".join("[%s] %s: %s" % (_clock(t), who, said) for t, who, said in lines)
     parts, cur = [], ""
     for line in text.splitlines():
@@ -361,7 +366,37 @@ def _summary(lines):
     if len(parts) > 1:            # a long call: notes on each part first, then on the whole
         text = "\n\n".join(_ask_ai("Make detailed notes of this part of a call or class: the points made, "
                                    "decisions, homework and dates. Plain text, short lines.", p) for p in parts)
-    return _ask_ai(SUMMARY_PROMPT, text)
+    when = started.strftime("%A %d %B %Y at %I:%M %p")
+    return _ask_ai(SUMMARY_PROMPT, "The call started on %s; [times] are from its start.\n\n%s" % (when, text))
+
+
+def _reminders(summary, now=None):
+    """The REMINDERS section split off the summary: (summary without it, [(when, what)] still to come)."""
+    head, _, tail = (summary or "").partition("\nREMINDERS")
+    now = now or datetime.datetime.now()
+    found = []
+    for m in re.finditer(r"^-\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2})\s*\|\s*(.+)$", tail, re.M):
+        try:
+            at = datetime.datetime.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        if at > now:
+            found.append((at, m.group(2).strip().rstrip(".")))
+    return head.rstrip(), sorted(found)
+
+
+def _offer_reminders(title, found):
+    """Ask once, after the notes, to set every reminder the call mentioned."""
+    from ..parse import clock_phrase
+    from . import timers
+
+    def set_them():
+        for at, what in found:
+            timers.set_reminder(what, time=at.isoformat())
+        return "Done, %d reminder%s set." % (len(found), "" if len(found) == 1 else "s")
+    listed = "; ".join("%s, %s" % (what, clock_phrase(at)) for at, what in found)
+    svc.assistant.confirm("Your notes are ready: %s. I can remind you: %s. Set %s?" % (
+        title, listed, "it" if len(found) == 1 else "them"), set_them, timeout=120)
 
 
 def _write_files(rec, lines, summary, mix):
@@ -401,14 +436,14 @@ def _process(rec):
             a[:max(0, min(len(mic) - i, len(a)))] += mic[i:i + len(a)]
             a[:max(0, min(len(pc) - i, len(a)))] += pc[i:i + len(a)]
             mix[i:i + len(a)] = np.clip(a, -32768, 32767)
-        lines, summary = [], ""
+        lines, summary, found = [], "", []
         try:
             lines = _merge(_transcribe(mic, "You"), _transcribe(pc, "Others"))
         except Exception:
             log.exception("Transcribing the call failed")
         if lines:
             try:
-                summary = _summary(lines)
+                summary, found = _reminders(_summary(lines, rec.stamp))
             except Exception:
                 log.exception("Summarizing the call failed")
         path, title = _write_files(rec, lines, summary, mix)
@@ -420,7 +455,10 @@ def _process(rec):
         except Exception:
             pass
         notify("Call notes ready", "%s, saved in Documents\\Gem Notes." % title, speak=False)
-        say("Your notes are ready: %s." % title)
+        if found and svc.assistant is not None:
+            _offer_reminders(title, found)
+        else:
+            say("Your notes are ready: %s." % title)
     except Exception:
         log.exception("Writing the call notes failed")
         say("Sorry, I couldn't finish the notes. The recording is in %s." % rec.tmp)

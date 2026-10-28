@@ -98,7 +98,7 @@ class WriteUpTest(unittest.TestCase):
         np.concatenate([_silence(3), _speech(2, 330), _silence(1)]).tofile(rec.pc.path)
         runtime_svc.brain.complete.return_value = (
             "TITLE: Science group project\n\nSUMMARY\n- Slides due Friday\n\nACTION ITEMS\n- You: slides by Friday\n\n"
-            "DATES\n- Friday")
+            "DATES\n- Friday\n\nREMINDERS\n- 2099-01-02 18:00 | hand in the slides\n- 2000-01-01 09:00 | long gone")
         heard = {"You": [{"start": 0.1, "end": 1.5, "text": "I'll do the slides"}],
                  "Others": [{"start": 0.2, "end": 1.8, "text": "Great, by Friday please."}]}
         calls = []
@@ -106,10 +106,18 @@ class WriteUpTest(unittest.TestCase):
         def whisper(mp3):
             calls.append(len(mp3))
             return heard["You" if len(calls) == 1 else "Others"]
+        assistant = mock.Mock()
         with mock.patch.object(cn, "_whisper", side_effect=whisper), \
                 mock.patch.object(runtime_svc, "state", mock.Mock()), \
+                mock.patch.object(runtime_svc, "assistant", assistant), \
                 mock.patch.dict("sys.modules", {"webrtcvad": None}):     # test tones aren't speech to webrtcvad
             cn._process(rec)
+        question, set_them = assistant.confirm.call_args[0]
+        self.assertIn("hand in the slides, 6:00 PM on Friday", question)   # 2 Jan 2099 is a Friday
+        self.assertNotIn("long gone", question)                               # already past: not offered
+        with mock.patch("gem.skills.timers.set_reminder") as set_reminder:
+            self.assertEqual(set_them(), "Done, 1 reminder set.")
+        set_reminder.assert_called_once_with("hand in the slides", time="2099-01-02T18:00:00")
         files = sorted(os.listdir(self.dir))
         self.assertIn("2026-10-28 18-05 Google Meet notes.mp3", files)
         with open(os.path.join(self.dir, "2026-10-28 18-05 Google Meet notes.txt"), encoding="utf-8") as f:
@@ -117,6 +125,7 @@ class WriteUpTest(unittest.TestCase):
         self.assertTrue(text.startswith("Science group project\n"))
         self.assertIn("2 minutes · Google Meet", text)
         self.assertLess(text.index("SUMMARY"), text.index("TRANSCRIPT"))          # the summary is at the top
+        self.assertNotIn("REMINDERS", text)                                       # that list is asked about instead
         self.assertIn("[00:00] You: I'll do the slides", text)
         self.assertIn("[00:02] Others: Great, by Friday please.", text)
         self.assertFalse(os.path.exists(rec.tmp))                                 # the raw recording is cleaned up
