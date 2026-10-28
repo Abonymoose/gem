@@ -37,6 +37,8 @@ class State:
         self.last_speech_end = 0.0
         self.macro_running = ""      # name of the macro being run ("" = none)
         self.macro_step = ""         # how far it is: "3 of 7"
+        self.notes_since = 0.0       # epoch seconds call notes started recording (0 = not taking notes)
+        self.notes_writing = False   # transcribing and summarizing a recorded call
         self.macro_recording = 0.0   # epoch seconds a macro recording started (0 = not recording)
 
     # ── Change notification ──────────────────────────────────────────────────

@@ -18,3 +18,5 @@ Pillow
 pycaw
 comtypes
 pywin32
+PyAudioWPatch
+lameenc

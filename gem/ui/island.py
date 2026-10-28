@@ -307,7 +307,11 @@ class Island(QWidget):
         self._activity_at = now
         st = svc.state
         act = None
-        if st.in_call:
+        if getattr(st, "notes_since", 0):
+            act = {"kind": "recording", "label": "Taking notes", "value": _countdown(time.time() - st.notes_since)}
+        elif getattr(st, "notes_writing", False):
+            act = {"kind": "macro", "label": "Writing your notes", "value": ""}
+        if act is None and st.in_call:
             act = {"kind": "call", "label": "On a call", "value": "quiet"}
         if act is None and getattr(st, "macro_recording", 0):
             act = {"kind": "recording", "label": "Recording macro",

@@ -40,6 +40,19 @@ def register(rule):
     def _(m, t):
         return Match("todo_remove", {"item": m.group(1)}, False)
 
+    # Call notes: record the call (or class, or video) and write it up. Recording needs Gem's name or push-to-talk.
+    @rule(r"^(?:take|start taking|start|begin taking|make) (?:some )?notes(?: (?:on|for|of|in|during) (?:this|the|my) "
+          r"(?:call|meeting|class|lecture|video|lesson))?$|^(?:record|transcribe) (?:this|the|my) "
+          r"(?:call|meeting|class|lecture|lesson)(?: and take notes)?$|^start (?:call|meeting|class) notes$", safe=False)
+    def _(m, t):
+        return Match("call_notes_start", {}, False)
+
+    @rule(r"^(?:stop|end|finish|done|quit) (?:taking )?(?:the )?(?:call |meeting |class )?notes$|"
+          r"^(?:stop|end) (?:recording|transcribing) (?:this|the|my) (?:call|meeting|class|lecture|lesson)$|"
+          r"^(?:that's|thats) (?:it|all) for (?:the )?notes$", safe=False)
+    def _(m, t):
+        return Match("call_notes_stop", {}, False)
+
     @rule(r"^(?:take a note|make a note|note|write down|jot down|note down|add a note)\s+(?:that\s+)?(.+)$", safe=False)
     def _(m, t):
         return Match("note_add", {"text": m.group(1)}, False)

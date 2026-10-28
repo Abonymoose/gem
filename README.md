@@ -140,6 +140,7 @@ When every AI model is at its per-minute limit, the island shows **AI busy** wit
 | Trivia | "let's play trivia", "trivia about movies", "quiz me on cricket": five questions, answer "B", "the second one" or the answer itself; "skip", "stop" |
 | Ambient sounds | "play rain sounds", "play brown noise for 30 minutes", "ocean waves", "fan", "white noise"; "make it quieter", "stop the sounds" / "stop the rain". Made on the PC, dips while Gem talks |
 | Voice notes | "record a voice note" (hands-free, stops when you do, transcribed), "play my last voice note", "read my voice notes", "what did I say in my voice note about the trip" |
+| Call notes | "take notes" during a call, class or video (Meet, Discord, Zoom, YouTube...): Gem records your mic and what the PC plays until the call ends or you say "stop taking notes", then saves to Documents\Gem Notes a notes file (title, summary, action items and dates at the top, then the transcript with who said what: You or Others) and an MP3 of the whole call, and opens the notes in Notepad. Let the others know you're recording |
 | Images | "make me a wallpaper of a misty forest", "draw a cat in a space suit", then "set it as my wallpaper". Free and quick (Pollinations), so not 4K; one image every ~45 seconds |
 | Sound output | "switch to my headphones", "switch the audio to speakers", "what's my audio output" (a numbered list), "switch to the second one" |
 | Windows by name | "minimize Discord", "hide Spotify", "restore Discord" / "bring back Spotify", "minimize everything except Chrome" |
@@ -337,6 +338,9 @@ to Start search. Turn on **Start with Windows** in the tray menu or Settings to 
   active, stay in `.gem` (`usage.json`, `timeline.json`) and the timeline is cleared after two weeks. Questions
   about it ("what was I working on", "when did I start Valorant") are only answered when they're for Gem, so
   someone else's conversation can't get your activity read out loud.
+- Call notes only record after you say "take notes" (the island shows a red dot and the time). The recording stays
+  in Documents\Gem Notes; the speech in it (silence cut out) goes to Groq to be transcribed, and the transcript
+  to the AI for the summary.
 - Your screen only leaves the PC when you ask about it (explain, read, highlight, autofill, remember this). In
   always-listening mode, overheard speech like "remember that" never sends it on its own: it needs Gem's name,
   push-to-talk, an ongoing conversation, or the AI agreeing the request was for Gem.
