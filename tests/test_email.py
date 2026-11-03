@@ -67,12 +67,22 @@ class RewriteTest(unittest.TestCase):
         self.selected[0] = ("To: Varsha Ma'am\nCC: Jayadev Sir, Meera Ma'am, Helen Ma'am\nSubject: Re: PTM Now Pilot "
                             "Update\n\nHello Ma'ams and Sir,\nJust wanted to quickly touch base!")
         self.brain.complete.return_value = {"fine": False, "subject": "Re: PTM Now Pilot Update", "question": "",
-                                            "body": "Dear Varsha Ma'am,\nCan you tell me?\nRegards,\nParshv Mehta"}
+                                            "left_out": "who will share the student data",
+                                            "body": "Dear Varsha Ma'am,\nCould you tell me?\nRegards,\nParshv Mehta"}
         res = replies.email_rewrite()
         replies._put_in_box.assert_called_once_with(
             "Subject: Re: PTM Now Pilot Update\n\nDear All,\n\nCan you tell me?\n\nRegards,\nParshv Mehta",
-            replace=False)                                                   # subject after To/CC still counts
+            replace=False)                              # subject after To/CC still counts; "Could you" is plain now
         self.assertIn("reply all", res)
+        self.assertIn("I left out who will share the student data.", res)
+
+    def test_ask_for_the_person_in_to_keeps_their_name(self):
+        self.selected[0] = "To: Helen Ma'am\nCC: Jayadev Sir, Ekta Ma'am\nSubject: URGENT!!!\n\nHi Helen Ma'am,"
+        self.brain.complete.return_value = {"fine": False, "subject": "Feedback form", "question": "",
+                                            "to_only": True, "body": "Dear Helen Ma'am,\nCan you share it?"}
+        res = replies.email_rewrite()
+        self.assertIn("Dear Helen Ma'am,", replies._put_in_box.call_args[0][0])
+        self.assertIn("reply all", res)                  # two CC'd: still reply all
 
     def test_fine_draft_is_left_alone(self):
         self.brain.complete.return_value = {"fine": True, "subject": "", "body": "", "question": ""}

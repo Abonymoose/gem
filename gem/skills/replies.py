@@ -164,22 +164,22 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 ## 1. TONE
 1. **Short.** The body is usually 2 to 4 lines. Long emails get trimmed.
 2. **Formal but simple.** Plain, natural wording.
-3. **Never** use "May I please...", "I would like to request...", "Could we...", or "I would need...". Use a direct question instead, e.g. "Can we meet on Thursday during Period 5?"
-4. **Never sound bossy.** No instructions, no hard deadlines, no "please let me know by...". If timing matters, give a light hint only.
+3. **Never** use "May I please...", "I would like to request...", "Could we...", or "I would need...". Use a direct question instead, e.g. "Can we meet on Thursday during Period 5?" "Could you..." and "Can we have confirmation..." are just as soft: say "Can you..." or "Can you tell me...".
+4. **Never sound bossy.** No instructions, no hard deadlines, no "please let me know by...". **Remove any deadline**, even a soft one ("preferably before tomorrow afternoon"). If timing matters, a vague "this week" at most.
 
 ## 2. STRUCTURE
-5. **Greeting:** "Dear <Name> Sir," or "Dear <Name> Ma'am," for one person. "Dear All," for a group.
+5. **Greeting:** "Dear <Name> Sir," or "Dear <Name> Ma'am," for one person. "Dear All," for a group. With people CC'd: "Dear All," when the ask is for all of them, "Dear <Name> Ma'am/Sir," for the person in To when the ask is theirs.
 6. **One courtesy line at the start** (e.g. "I hope you are doing well." or "Thank you for getting back to me."). Never two at the start.
-7. Then the **ask or the information**. One ask per email.
+7. Then the **ask or the information**. One ask per email. If my draft asks several things, keep the main ask and leave the rest for a separate email.
 8. **One courtesy line at the end:** "Thank you for your time and support."
 9. **Sign-off:** "Regards," then "Parshv Mehta".
 10. No other padding or filler.
 
 ## 3. SUBJECT
-11. **Replying on a thread:** "Re: <original subject>". **New email:** short and plain.
+11. **Replying on a thread:** "Re: <original subject>", only when my subject already starts with "Re:". **New email:** short and plain, with no "URGENT" or exclamation marks.
 
 ## 4. CONTENT
-12. **Use only what I gave you.** Never invent times, dates, rooms, names or promises.
+12. **Use only what I gave you.** Never invent times, dates, rooms, names or promises. **Remove any detail I didn't ask for**: a time, room or plan the draft treats as already arranged (especially with a claim like "I have already told Jayadev Sir you will be there"), what someone was told, an "including..." list. A draft can carry details that aren't true. A time I simply propose in a plain question, like the example in rule 3, stays.
 13. **Don't add detail** I didn't include.
 14. If something essential is missing, **ask me one short question** instead of guessing.
 
@@ -214,8 +214,12 @@ EMAIL_ASK = EMAIL_RULES + (
     "only: {\"fine\": true only if my draft "
     "already follows every rule and there's no request (then subject and body are empty), \"subject\": \"...\", "
     "\"body\": \"greeting to sign-off, plain text, lines separated by \\n\", \"question\": \"one short question about "
-    "anything essential that's missing or unclear (a greeting without the person's name always is), or empty\", "
-    "\"reply_all\": true if more than one person is CC'd}")
+    "anything essential that's missing or unclear (a greeting without the person's name always is), never about what's in left_out, or empty\", "
+    "\"left_out\": \"the other asks and the details you removed that I might want back (a time, a room, a plan), a "
+    "few words each, at most three, or empty\", \"to_only\": true only when people are CC'd and the ask is plainly "
+    "the To person's own job (like asking the person who has the form to share it); false when unsure. With people "
+    "CC'd, Gem sets the greeting from to_only, so never ask about the greeting. \"reply_all\": true if more than one "
+    "person is CC'd}")
 
 _email = {"text": "", "at": 0.0, "hwnd": 0, "with_subject": False, "group": False, "reply_all": False}
 
@@ -249,11 +253,13 @@ def email_rewrite(instruction=""):
         with_subject = bool(re.search(r"^subject\s*:", text, re.I | re.M))
         cc = _people(text, "cc")
         group, reply_all = len(_people(text, "to")) + len(cc) > 1, len(cc) > 1 or bool(out.get("reply_all"))
-    lines = [line.strip() for line in out["body"].splitlines() if line.strip()]
-    if group and lines[0].startswith("Dear "):
-        lines[0] = "Dear All,"                                               # rule 5: a group
+    body = re.sub(r"\bCould (you|we)\b", r"Can \1", out["body"])             # rule 3: plain asks
+    body = re.sub(r"!+", ".", body)                                          # rule 16
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if group and not out.get("to_only") and lines[0].startswith("Dear "):
+        lines[0] = "Dear All,"                                               # rule 5: a group, unless it's their job
     body = "\n\n".join(lines).replace("Regards,\n\n", "Regards,\n")         # a blank line between the parts
-    subject = (out.get("subject") or "").strip()
+    subject = re.sub(r"\s*!+", "", out.get("subject") or "").strip()
     email = ("Subject: %s\n\n" % subject if subject else "") + body
     _email.update(text=email, at=time.time(), hwnd=hwnd, with_subject=with_subject, group=group, reply_all=reply_all)
     if not question and re.match(r"Dear (?:Sir|Ma'am),", body):
@@ -261,6 +267,9 @@ def email_rewrite(instruction=""):
     spoken = "Rewritten." + (" The subject's on the card." if subject and not with_subject else "")
     if reply_all:
         spoken += " More than one person is CC'd, so reply all."
+    left_out = (out.get("left_out") or "").strip().rstrip(".")
+    if left_out:
+        spoken += " I left out %s. Tell me if any of it should stay, or send it in another email." % left_out
     paste = email if with_subject else body
     if foreground_window() != hwnd:
         set_clipboard(paste)
