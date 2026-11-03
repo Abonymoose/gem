@@ -20,7 +20,7 @@ from ..cards import card
 from . import messaging
 from ..parse import duration_phrase, parse_duration, parse_when
 from ..runtime import svc
-from ..winapi import copy_selection, get_clipboard, press, release_modifiers, set_clipboard
+from ..winapi import copy_selection, foreground_window, get_clipboard, press, release_modifiers, set_clipboard
 
 log = logging.getLogger("gem.replies")
 
@@ -152,3 +152,92 @@ def reply_revise(instruction="try a different version"):
 
 def recent_draft():
     return bool(_last["draft"]) and time.time() - _last["at"] < 600
+
+
+# ── Emails to school staff ───────────────────────────────────────────────────
+
+EMAIL_RULES = """# EMAIL RULES
+
+You write and rewrite emails for me. I am a student writing to school staff, so I am **junior to the recipient**. Follow every rule below exactly.
+
+## 1. TONE
+1. **Short.** The body is usually 2 to 4 lines. Long emails get trimmed.
+2. **Formal but simple.** Plain, natural wording.
+3. **Never** use "May I please...", "I would like to request...", "Could we...", or "I would need...". Use a direct question instead, e.g. "Can we meet on Thursday during Period 5?"
+4. **Never sound bossy.** No instructions, no hard deadlines, no "please let me know by...". If timing matters, give a light hint only.
+
+## 2. STRUCTURE
+5. **Greeting:** "Dear <Name> Sir," or "Dear <Name> Ma'am," for one person. "Dear All," for a group.
+6. **One courtesy line at the start** (e.g. "I hope you are doing well." or "Thank you for getting back to me."). Never two at the start.
+7. Then the **ask or the information**. One ask per email.
+8. **One courtesy line at the end:** "Thank you for your time and support."
+9. **Sign-off:** "Regards," then "Parshv Mehta".
+10. No other padding or filler.
+
+## 3. SUBJECT
+11. **Replying on a thread:** "Re: <original subject>". **New email:** short and plain.
+
+## 4. CONTENT
+12. **Use only what I gave you.** Never invent times, dates, rooms, names or promises.
+13. **Don't add detail** I didn't include.
+14. If something essential is missing, **ask me one short question** instead of guessing.
+
+## 5. HUMAN VOICE
+15. Write the way a **school student** writes: plain words, short sentences, simple structure.
+16. **No** em dashes, semicolons or exclamation marks.
+17. **No** bullet points, bold, headers or emojis **inside the email**. Plain text only.
+18. Never use stock AI or corporate phrases: "I hope this email finds you well", "I wanted to reach out", "kindly", "touch base", "circle back", "at your earliest convenience", "do not hesitate to", "I would be grateful", "delve", "streamline", "ensure", "moreover", "furthermore".
+19. **No** lists of three, and no "not only... but also".
+20. **Don't smooth my wording** into something nicer than I would write. If my sentence is plain and correct, leave it.
+
+## 6. REWRITING MY DRAFTS
+21. **Keep my meaning and my wording** as much as possible. Change only what breaks a rule above.
+22. If my draft **already follows the rules**, say it's fine and don't rewrite it.
+
+## 7. SORTING
+23. If more than one person is CC'd, **remind me to reply-all.**
+
+## 8. OUTPUT
+24. Output **only the email** (subject + body). One version. No explanation unless I ask.
+"""
+
+EMAIL_ASK = EMAIL_RULES + (
+    "\nYou get my email, and maybe a request (a change, or my answer to your question). Always write the email "
+    "first, even when unsure: never ask instead of writing. With a request, start from my email and change only what "
+    "the request is about, keeping everything else it says. Reply with JSON only: {\"fine\": true only if my draft "
+    "already follows every rule and there's no request (then subject and body are empty), \"subject\": \"...\", "
+    "\"body\": \"greeting to sign-off, plain text, lines separated by \\n\", \"question\": \"one short question about "
+    "anything essential that's missing or unclear (a greeting without the person's name always is), or empty\", "
+    "\"reply_all\": true if more than one person is CC'd}")
+
+_email = {"text": "", "at": 0.0, "hwnd": 0}
+
+
+@action("email_rewrite", "Rewrite the selected email to school staff by the user's email rules and paste it over "
+        "the selection. Also for the user's answer to Gem's question about that email, or a change to it.",
+        "instruction?: str")
+def email_rewrite(instruction=""):
+    hwnd = foreground_window()
+    text = (copy_selection() or "").strip()
+    # Nothing selected right after a rewrite: it's an answer or a change, for the email Gem just pasted.
+    again = not text and _email["text"] and time.time() - _email["at"] < 600 and hwnd == _email["hwnd"]
+    text = _email["text"] if again else text
+    if not text:
+        raise ActionError("Select the email first, then ask me again.")
+    request = "My email:\n%s%s" % (text[:MAX_CONTEXT], "\n\nRequest: %s" % instruction if instruction else "")
+    out = svc.brain.complete(EMAIL_ASK, request, max_tokens=900, json_mode=True, temperature=0.3) or {}
+    question = (out.get("question") or "").strip()
+    if out.get("fine") or not (out.get("body") or "").strip():
+        return ("That email already follows your rules, so I left it. " + question).strip()
+    body, subject = out["body"].strip(), (out.get("subject") or "").strip()
+    email = ("Subject: %s\n\n" % subject if subject else "") + body
+    _email.update(text=email, at=time.time(), hwnd=hwnd)
+    spoken = "Rewritten. The subject's on the card." if subject else "Rewritten."
+    if out.get("reply_all"):
+        spoken += " More than one person is CC'd, so reply all."
+    if foreground_window() != hwnd:
+        set_clipboard(body)
+        spoken = "You switched windows, so it's on your clipboard instead. " + spoken
+    else:
+        _put_in_box(body, replace=again)
+    return card("draft", (spoken + " " + question).strip(), note=email, title="Email")

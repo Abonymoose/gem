@@ -104,6 +104,7 @@ When every AI model is at its per-minute limit, the island shows **AI busy** wit
 | Briefing | "good morning" / "brief me" — date, weather, today's classes, reminders and to-dos |
 | Weather | "what's the weather", "is it going to rain tomorrow", "do I need an umbrella in Toronto" ("my city is Toronto" saves your home city) |
 | Text tools | Select text anywhere, then: "summarize this", "explain this", "fix the grammar", "make this more professional", "translate this to Spanish", "how many words is this" (counted on the PC, with characters and reading time). Also "how do you spell necessary" |
+| Email rewriter | Select your draft and say "rewrite the email I have selected" (add what you want: "...and ask for a meeting on Thursday"). Gem rewrites it by your email rules for school staff (short, formal but simple, "Dear <Name> Sir,", "Regards, Parshv Mehta"), pastes it over the selection and shows the subject on the card. A draft that already follows the rules is left alone. If something's missing, Gem asks after writing; just answer, and it updates the same email |
 | Dictation | "start dictation" … "new line" … "delete that" … "stop dictation" |
 | PC | "system stats", "what's using my memory", "battery", "uptime", "ping", "dark mode", "lock my PC", "restart the computer" (say "confirm" to go ahead) |
 | Memory | "remember that my locker code is 42", "what do you remember about me", "forget my locker code" |

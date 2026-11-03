@@ -59,6 +59,11 @@ def register(rule):
         return Match("text_tool", {"task": "translate", "instruction": "to " + lang,
                                    "source": _source(m.group(1))}, False)
 
+    @rule(r"^(?:rewrite|redo|fix|improve|clean up) (?:the |my |this |that )?(?:selected )?(?:e-?mail|mail)"
+          r"(?: (?:that )?(?:i have|i've|i) (?:selected|highlighted))?(?:,? (?:and |so |to |with )?(.+))?$", safe=False)
+    def _(m, t):
+        return Match("email_rewrite", {"instruction": m.group(1) or ""}, False)
+
     @rule(r"^(?:rewrite %s(?: (.+))?|make %s (?:sound )?(?:more )?(formal|professional|casual|friendly|polite|"
           r"clearer|simpler))$" % (_THIS, _THIS), safe=False)
     def _(m, t):
