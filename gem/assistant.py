@@ -21,7 +21,7 @@ from .state import ALWAYS_LISTENING
 log = logging.getLogger("gem.assistant")
 
 YES = {"yes", "yeah", "yep", "yup", "sure", "confirm", "do it", "go ahead", "yes please", "okay", "ok",
-       "correct", "please do", "yes do it", "affirmative"}
+       "correct", "please do", "yes do it", "affirmative", "set them", "set it", "yes set them", "yes set it"}
 NO = {"no", "nope", "cancel", "don't", "dont", "stop", "never mind", "nevermind", "no thanks", "don't do it"}
 POWER_CANCEL = {"cancel", "stop", "cancel it", "don't", "dont", "no", "wait", "never mind", "nevermind", "stop it",
                 "don't do it", "dont do it", "don't turn it off", "i'm still watching", "im still watching"}
@@ -141,7 +141,7 @@ class Assistant:
         if macros.recording():
             actions.run("macro_record", {"command": "cancel"})
         for app in cfg.get("close_apps") or []:
-            actions.run("close_app", {"name": app})
+            actions.run("close_app", {"name": app, "force": True})
         if cfg.get("mute", True):
             actions.run("volume", {"mute": True})
         if cfg.get("minimize_all", True):

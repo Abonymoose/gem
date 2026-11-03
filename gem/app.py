@@ -236,6 +236,8 @@ def main():
         log.warning("GROQ_API_KEY not set: AI answers and Whisper are off")
     hint = "Hold Caps Lock to talk." if st.mode == PUSH_TO_TALK else "I'm listening. Hold Caps Lock to mute me."
     threading.Timer(2.8, lambda: caption("Gem is ready. " + hint, seconds=4)).start()
+    from .skills import call_notes
+    threading.Timer(15, call_notes.recover).start()          # a call Gem was recording when it last closed
     log.info("Ready: %s", st.describe())
 
     try:

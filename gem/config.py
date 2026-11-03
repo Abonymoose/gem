@@ -308,6 +308,11 @@ def _read_json(path, default):
         return default
     except Exception as e:
         log.error("Could not read %s: %s", path, e)
+        try:                    # the next save would write the default over it: keep it for recovery
+            os.replace(path, path + ".broken")
+            log.error("Kept the unreadable file as %s.broken", path)
+        except OSError:
+            pass
         return default
 
 
@@ -315,6 +320,8 @@ def _write_json(path, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())    # on disk before the rename, so a power cut can't leave an empty file
     os.replace(tmp, path)
 
 

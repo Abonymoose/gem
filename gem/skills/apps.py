@@ -233,16 +233,38 @@ def app_windows(name):
 
 
 @action("close_app", "Close an app.", "name: str")
-def close_app(name=""):
+def close_app(name="", force=False):
+    """Like clicking X, so an app with unsaved work can ask to save; force (panic) kills it at once."""
     procs = running(name)
     if not procs:
         return "%s isn't running." % name.capitalize()
+    if force:
+        _kill(procs)
+        return "Closed %s." % name
+    pids = {p.pid for p in procs}
+    for hwnd, _, _ in top_windows():
+        if window_pid(hwnd) in pids:
+            close_window(hwnd)
+    threading.Thread(target=_finish_closing, args=(procs,), name="close-app", daemon=True).start()
+    return "Closed %s." % name
+
+
+def _finish_closing(procs, wait=3.0):
+    """What's left once the windows closed (tray icons, helpers) is killed. If a window is still up (Save
+    changes?), the app is left alone: killing its helper processes would lose the work too."""
+    time.sleep(wait)
+    pids = {p.pid for p in procs}
+    if any(window_pid(hwnd) in pids for hwnd, _, _ in top_windows()):
+        return
+    _kill(procs)
+
+
+def _kill(procs):
     for p in procs:
         try:
             p.terminate()
         except Exception:
             pass
-    return "Closed %s." % name
 
 
 @action("close_window", "Close the focused window.")

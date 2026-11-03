@@ -284,5 +284,49 @@ class TimelineTest(unittest.TestCase):
         self.assertEqual(route("how long have I been playing Valorant").args["app"], "valorant")
 
 
+class CloseAppTest(unittest.TestCase):
+    """Closing like the X button, so unsaved work gets its Save? box; only panic kills at once."""
+
+    def setUp(self):
+        from gem.skills import apps
+        self.apps, self.proc = apps, mock.Mock(pid=42)
+        for p in [mock.patch.object(apps, "running", return_value=[self.proc]),
+                  mock.patch.object(apps, "window_pid", return_value=42),
+                  mock.patch.object(apps, "close_window"), mock.patch.object(apps, "threading")]:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_closes_windows_first(self):
+        with mock.patch.object(self.apps, "top_windows", return_value=[(1, "Essay - Word", "winword.exe")]):
+            self.apps.close_app("word")
+            self.apps.close_window.assert_called_once_with(1)
+            self.proc.terminate.assert_not_called()
+            self.apps._finish_closing([self.proc], wait=0)       # "Save changes?" keeps the window up
+        self.proc.terminate.assert_not_called()
+        with mock.patch.object(self.apps, "top_windows", return_value=[]):
+            self.apps._finish_closing([self.proc], wait=0)       # window gone, process left in the tray
+        self.proc.terminate.assert_called_once()
+
+    def test_panic_kills_at_once(self):
+        with mock.patch.object(self.apps, "top_windows", return_value=[(1, "Fortnite", "fortnite.exe")]):
+            self.apps.close_app("fortnite", force=True)
+        self.proc.terminate.assert_called_once()
+        self.apps.close_window.assert_not_called()
+
+
+class BrokenFileTest(unittest.TestCase):
+    def test_unreadable_file_is_kept_not_overwritten(self):
+        import os
+        import tempfile
+        from gem.config import _read_json
+        path = os.path.join(tempfile.mkdtemp(), "reminders.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"items": [{"message": "hand in the slides"},')     # cut off
+        self.assertEqual(_read_json(path, {"items": []}), {"items": []})
+        with open(path + ".broken", encoding="utf-8") as f:
+            self.assertIn("hand in the slides", f.read())
+        self.assertFalse(os.path.exists(path))
+
+
 if __name__ == "__main__":
     unittest.main()

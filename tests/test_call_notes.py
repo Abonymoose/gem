@@ -132,5 +132,48 @@ class WriteUpTest(unittest.TestCase):
         self.assertGreater(os.path.getsize(os.path.join(self.dir, "2026-10-28 18-05 Google Meet notes.mp3")), 1000)
 
 
+class RemindersTest(unittest.TestCase):
+    def test_just_missed_comes_now_long_gone_is_dropped(self):
+        now = __import__("datetime").datetime(2026, 11, 3, 18, 0)
+        summary = "SUMMARY\n- x\n\nREMINDERS\n- 2026-11-03 17:55 | join English class\n- 2026-11-03 16:00 | old"
+        head, found = cn._reminders(summary, now)
+        self.assertEqual(head, "SUMMARY\n- x")
+        self.assertEqual([(at.strftime("%H:%M"), what) for at, what in found], [("18:01", "join English class")])
+
+    def test_waits_for_an_open_card(self):
+        assistant, waits = mock.Mock(), [object(), None]        # a "send it" card is up, then answered
+        with mock.patch.object(runtime_svc, "assistant", assistant), \
+                mock.patch.object(cn.safety, "current", side_effect=lambda: waits.pop(0)), \
+                mock.patch.object(cn.time, "sleep") as sleep:
+            cn._offer_reminders("Science", [(__import__("datetime").datetime(2099, 1, 2, 18), "hand in slides")])
+        sleep.assert_called_once()
+        assistant.confirm.assert_called_once()
+
+
+class RecoverTest(unittest.TestCase):
+    def test_leftover_recordings(self):
+        root = os.path.join(cn.DATA_DIR, "call_notes_tmp")
+        left = os.path.join(root, "20261103-100000")
+        empty = os.path.join(root, "20261103-110000")
+        for d in (left, empty):
+            os.makedirs(d, exist_ok=True)
+        self.addCleanup(shutil.rmtree, root, True)
+        _silence(30).tofile(os.path.join(left, "mic.raw"))
+        _silence(29).tofile(os.path.join(left, "pc.raw"))
+        seen = []
+        with mock.patch.object(cn, "_process", side_effect=lambda rec: seen.append(rec)):
+            cn.recover()
+        self.assertEqual(len(seen), 1)                           # the empty one is just removed
+        rec = seen[0]
+        self.assertEqual(rec.stamp.strftime("%H:%M"), "10:00")
+        self.assertAlmostEqual(rec.ended - rec.started, 30, delta=0.01)
+        self.assertEqual(rec.pc.written, 29 * cn.RATE)
+        self.assertFalse(os.path.exists(empty))
+        self.assertTrue(os.path.isdir(left + "-failed"))         # _process (faked) didn't clean up: not retried
+        with mock.patch.object(cn, "_process") as again:
+            cn.recover()
+        again.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

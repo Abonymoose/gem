@@ -15,10 +15,12 @@ import re
 import shutil
 import threading
 import time
+import types
 
 import numpy as np
 import requests
 
+from .. import safety
 from ..actions import ActionError, action
 from ..brain import BrainUnavailable
 from ..config import DATA_DIR
@@ -380,8 +382,8 @@ def _reminders(summary, now=None):
             at = datetime.datetime.fromisoformat(m.group(1))
         except ValueError:
             continue
-        if at > now:
-            found.append((at, m.group(2).strip().rstrip(".")))
+        if at > now - datetime.timedelta(minutes=10):     # just missed while the notes were written: remind now
+            found.append((max(at, now + datetime.timedelta(minutes=1)), m.group(2).strip().rstrip(".")))
     return head.rstrip(), sorted(found)
 
 
@@ -395,6 +397,8 @@ def _offer_reminders(title, found):
             timers.set_reminder(what, time=at.isoformat())
         return "Done, %d reminder%s set." % (len(found), "" if len(found) == 1 else "s")
     listed = "; ".join("%s, %s" % (what, clock_phrase(at)) for at, what in found)
+    while safety.current() is not None:             # asking now would cancel the "send it" / "confirm" card up
+        time.sleep(1)
     svc.assistant.confirm("Your notes are ready: %s. I can remind you: %s. Set %s?" % (
         title, listed, "it" if len(found) == 1 else "them"), set_them, timeout=120)
 
@@ -540,3 +544,33 @@ def call_notes_stop():
 
 def taking_notes():
     return _rec is not None
+
+
+def recover():
+    """Recordings left behind when Gem quit or the PC shut down mid-call (or mid-write-up): write their notes now.
+    One that can't be written is renamed so it isn't retried every start, and stays for the user."""
+    root = os.path.join(DATA_DIR, "call_notes_tmp")
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        tmp = os.path.join(root, name)
+        if _rec is not None and _rec.tmp == tmp:
+            continue                                    # the one being recorded right now
+        try:
+            stamp = datetime.datetime.strptime(name, "%Y%m%d-%H%M%S")
+        except ValueError:
+            continue                                    # not a recording, or one that failed before
+        tracks = []
+        for f in ("mic.raw", "pc.raw"):
+            path = os.path.join(tmp, f)
+            tracks.append(types.SimpleNamespace(path=path, written=os.path.getsize(path) // 2
+                                                if os.path.exists(path) else 0))
+        if not any(t.written for t in tracks):
+            shutil.rmtree(tmp, ignore_errors=True)      # stopped before anything was recorded
+            continue
+        rec = Recorder.__new__(Recorder)
+        rec.stamp, rec.tmp, rec.app, rec.mic, rec.pc = stamp, tmp, "", tracks[0], tracks[1]
+        rec.started = stamp.timestamp()
+        rec.ended = rec.started + max(t.written for t in tracks) / RATE
+        log.info("Writing the notes of a recording left from %s", stamp)
+        _process(rec)
+        if os.path.isdir(tmp):
+            os.replace(tmp, tmp + "-failed")
