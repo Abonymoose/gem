@@ -8,6 +8,8 @@ from .test_router import route
 from gem.runtime import svc as runtime_svc
 from gem.skills import replies
 
+END = "\n\nThank you for your time and support.\n\nRegards,\nParshv Mehta"          # always the same (rules 8, 9)
+
 
 class RoutesTest(unittest.TestCase):
     def test_commands(self):
@@ -52,15 +54,15 @@ class RewriteTest(unittest.TestCase):
         request = self.brain.complete.call_args[0][1]
         self.assertIn("Subject: Meeting", request)                          # the email Gem pasted, not the old draft
         self.assertIn("Request: thursday period 5", request)
-        replies._put_in_box.assert_called_with("Dear Shah Sir,\n\n...Thursday...", replace=True)
+        replies._put_in_box.assert_called_with("Dear Shah Sir,\n\n...Thursday..." + END, replace=True)
 
     def test_selected_subject_comes_back_and_a_missing_name_is_asked(self):
         self.selected[0] = "Subject: URGENT!!! Meeting needed\n\nHi Sir,\nKindly let me know by Friday..."
         self.brain.complete.return_value = {"fine": False, "subject": "Meeting request", "question": "",
-                                            "body": "Dear Sir,\nCan we meet this week?\nRegards,\nParshv Mehta"}
+                                            "body": "Dear Sir,\nCan we meet this week?\nThanks,\nParshv"}
         res = replies.email_rewrite()
-        replies._put_in_box.assert_called_once_with(
-            "Subject: Meeting request\n\nDear Sir,\n\nCan we meet this week?\n\nRegards,\nParshv Mehta", replace=False)
+        replies._put_in_box.assert_called_once_with(       # the AI's own sign-off is replaced by the fixed one
+            "Subject: Meeting request\n\nDear Sir,\n\nCan we meet this week?" + END, replace=False)
         self.assertTrue(res.endswith("What's their name, for the greeting?"))
 
     def test_group_gets_dear_all_and_reply_all(self):
@@ -71,7 +73,7 @@ class RewriteTest(unittest.TestCase):
                                             "body": "Dear Varsha Ma'am,\nCould you tell me?\nRegards,\nParshv Mehta"}
         res = replies.email_rewrite()
         replies._put_in_box.assert_called_once_with(
-            "Subject: Re: PTM Now Pilot Update\n\nDear All,\n\nCan you tell me?\n\nRegards,\nParshv Mehta",
+            "Subject: Re: PTM Now Pilot Update\n\nDear All,\n\nCan you tell me?" + END,
             replace=False)                              # subject after To/CC still counts; "Could you" is plain now
         self.assertIn("reply all", res)
         self.assertIn("I left out who will share the student data.", res)
@@ -79,10 +81,20 @@ class RewriteTest(unittest.TestCase):
     def test_ask_for_the_person_in_to_keeps_their_name(self):
         self.selected[0] = "To: Helen Ma'am\nCC: Jayadev Sir, Ekta Ma'am\nSubject: URGENT!!!\n\nHi Helen Ma'am,"
         self.brain.complete.return_value = {"fine": False, "subject": "Feedback form", "question": "",
-                                            "to_only": True, "body": "Dear Helen Ma'am,\nCan you share it?"}
+                                            "body": "Dear Helen Ma'am,\nCan you share it?"}
         res = replies.email_rewrite()
         self.assertIn("Dear Helen Ma'am,", replies._put_in_box.call_args[0][0])
         self.assertIn("reply all", res)                  # two CC'd: still reply all
+
+    def test_one_cc_double_re_and_odd_characters(self):
+        self.selected[0] = "To: Jayadev Sir\nCC: Varsha Ma'am\nSubject: Re: Re: Meeting Follow Up\n\nRespected Sir,"
+        self.brain.complete.return_value = {"fine": False, "subject": "Re: Re: Meeting Follow Up", "question": "",
+                                            
+                                            "body": "Dear Jayadev Sir,\nCan we have a 20‑minute meeting?"}
+        res = replies.email_rewrite()
+        self.assertEqual(replies._put_in_box.call_args[0][0],
+                         "Subject: Re: Meeting Follow Up\n\nDear Jayadev Sir,\n\nCan we have a 20-minute meeting?" + END)
+        self.assertIn("reply all", res)                  # one person CC'd is enough
 
     def test_fine_draft_is_left_alone(self):
         self.brain.complete.return_value = {"fine": True, "subject": "", "body": "", "question": ""}

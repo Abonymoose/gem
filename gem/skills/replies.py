@@ -118,8 +118,12 @@ def _write(conversation, instruction=""):
               "hasn't stated; keep it non-committal instead.%s Output only the message text, nothing else.%s"
               % (name, name, name, name, away, (" Change requested: %s." % instruction) if instruction else ""))
     text = svc.brain.complete(prompt, conversation, max_tokens=400).strip().strip('"')
-    # Plain characters, like someone typing on a keyboard.
-    return text.translate({0x202F: " ", 0x00A0: " ", 0x2009: " ", 0x2019: "'", 0x2018: "'", 0x201C: '"', 0x201D: '"'})
+    return text.translate(PLAIN)
+
+
+# Plain characters, like someone typing on a keyboard: AI text has odd spaces, curly quotes and special hyphens.
+PLAIN = {0x202F: " ", 0x00A0: " ", 0x2009: " ", 0x2019: "'", 0x2018: "'", 0x201C: '"', 0x201D: '"', 0x2010: "-",
+         0x2011: "-", 0x2013: "-"}
 
 
 @action("reply_draft", "Draft a reply to the copied or selected conversation and type it into the message box "
@@ -168,9 +172,9 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 4. **Never sound bossy.** No instructions, no hard deadlines, no "please let me know by...". **Remove any deadline**, even a soft one ("preferably before tomorrow afternoon"). If timing matters, a vague "this week" at most.
 
 ## 2. STRUCTURE
-5. **Greeting:** "Dear <Name> Sir," or "Dear <Name> Ma'am," for one person. "Dear All," for a group. With people CC'd: "Dear All," when the ask is for all of them, "Dear <Name> Ma'am/Sir," for the person in To when the ask is theirs.
+5. **Greeting:** "Dear <Name> Sir," or "Dear <Name> Ma'am," for one person. "Dear All," for a group. With people CC'd, follow my draft's greeting: it greets one person ("Respected Sir", "Hi Helen Ma'am"): "Dear <Name> Sir/Ma'am," for the person in To; it greets several ("Hello Ma'ams and Sir", "Hi Ma'ams"): "Dear All,".
 6. **One courtesy line at the start** (e.g. "I hope you are doing well." or "Thank you for getting back to me."). Never two at the start.
-7. Then the **ask or the information**. One ask per email. If my draft asks several things, keep the main ask and leave the rest for a separate email.
+7. Then the **ask or the information**. One ask per email. If my draft asks several things, keep the main ask and leave the rest for a separate email. When the ask makes no sense without it, keep one plain sentence of context first ("Several teachers could not log in today, and I have reset their access."). A plan I announce as decided becomes my one ask ("I have scheduled a session on Wednesday at 3 PM" becomes "Can we have a session on Wednesday at 3 PM?"), never an announcement plus "Can you confirm".
 8. **One courtesy line at the end:** "Thank you for your time and support."
 9. **Sign-off:** "Regards," then "Parshv Mehta".
 10. No other padding or filler.
@@ -179,7 +183,7 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 11. **Replying on a thread:** "Re: <original subject>", only when my subject already starts with "Re:". **New email:** short and plain, with no "URGENT" or exclamation marks.
 
 ## 4. CONTENT
-12. **Use only what I gave you.** Never invent times, dates, rooms, names or promises. **Remove any detail I didn't ask for**: a time, room or plan the draft treats as already arranged (especially with a claim like "I have already told Jayadev Sir you will be there"), what someone was told, an "including..." list. A draft can carry details that aren't true. A time I simply propose in a plain question, like the example in rule 3, stays.
+12. **Use only what I gave you.** Never invent times, dates, rooms, names or promises. **Remove any detail I didn't ask for**: beyond the main ask (rule 7), a time, room or plan the draft treats as already arranged (especially with a claim like "I have already told Jayadev Sir you will be there"), what someone was told, an "including..." list. A draft can carry details that aren't true. A time I simply propose in a plain question, like the example in rule 3, stays.
 13. **Don't add detail** I didn't include.
 14. If something essential is missing, **ask me one short question** instead of guessing.
 
@@ -188,7 +192,7 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 16. **No** em dashes, semicolons or exclamation marks.
 17. **No** bullet points, bold, headers or emojis **inside the email**. Plain text only.
 18. Never use stock AI or corporate phrases: "I hope this email finds you well", "I wanted to reach out", "kindly", "touch base", "circle back", "at your earliest convenience", "do not hesitate to", "I would be grateful", "delve", "streamline", "ensure", "moreover", "furthermore".
-19. **No** lists of three, and no "not only... but also".
+19. **No** lists of three, and no "not only... but also". A list inside the ask becomes its main thing ("the server, the email setup and the backups" becomes "the server setup"); they know what's in it.
 20. **Don't smooth my wording** into something nicer than I would write. If my sentence is plain and correct, leave it.
 
 ## 6. REWRITING MY DRAFTS
@@ -196,7 +200,7 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 22. If my draft **already follows the rules**, say it's fine and don't rewrite it.
 
 ## 7. SORTING
-23. If more than one person is CC'd, **remind me to reply-all.**
+23. If anyone is CC'd, **remind me to reply-all.**
 
 ## 8. OUTPUT
 24. Output **only the email** (subject + body). One version. No explanation unless I ask.
@@ -210,16 +214,20 @@ EMAIL_ASK = EMAIL_RULES + (
     "question (\"Can you tell me...\", not \"Can we have confirmation...\"; no second line like \"Please let me "
     "know your availability\"); the ask names each thing once, plainly, without \"including ...\", examples or other "
     "side details (\"the student data, including parent emails\" becomes \"the student data\"); no "
-    "instructions; no deadline, day or time to reply by, at most a vague hint like \"this week\". Reply with JSON "
+    "instructions; no deadline, day or time to reply by, at most a vague hint like \"this week\"; when the ask needs it, one plain sentence of what happened or what I did comes before it (rule 7); a plan I announced is asked as \"Can we have <the plan, with its time and place>?\"; \"Can you tell me\" rather than \"Can you confirm\". Reply with JSON "
     "only: {\"fine\": true only if my draft "
     "already follows every rule and there's no request (then subject and body are empty), \"subject\": \"...\", "
     "\"body\": \"greeting to sign-off, plain text, lines separated by \\n\", \"question\": \"one short question about "
     "anything essential that's missing or unclear (a greeting without the person's name always is), never about what's in left_out, or empty\", "
-    "\"left_out\": \"the other asks and the details you removed that I might want back (a time, a room, a plan), a "
-    "few words each, at most three, or empty\", \"to_only\": true only when people are CC'd and the ask is plainly "
-    "the To person's own job (like asking the person who has the form to share it); false when unsure. With people "
-    "CC'd, Gem sets the greeting from to_only, so never ask about the greeting. \"reply_all\": true if more than one "
-    "person is CC'd}")
+    "\"left_out\": \"the other asks and the facts you removed that I might want back (a time, a room, a plan; never deadlines, stock phrases or wording), a "
+    "few words each, at most three, or empty\", \"reply_all\": true if anyone is CC'd}. With people CC'd, greet "
+    "the person in To; Gem changes it to \"Dear All,\" when my draft greets several, so never ask about the greeting.")
+
+# The AI's closing courtesy line and sign-off, whatever it wrote, so the fixed ones can go in their place.
+ENDING = re.compile(r"^(?:thank you for your time and support|(?:warm |kind |best )?regards|thanks|thank you|many "
+                    r"thanks|cheers|thanking you|yours|parshv)\b.*$", re.I)
+
+GREETS_MANY = re.compile(r"\b(?:ma'?ams|sirs|all|everyone|teachers|team|both|and)\b", re.I)
 
 _email = {"text": "", "at": 0.0, "hwnd": 0, "with_subject": False, "group": False, "reply_all": False}
 
@@ -252,21 +260,26 @@ def email_rewrite(instruction=""):
         # Selected with its subject line: it gets one back. Just the body (a compose box): the subject's on the card.
         with_subject = bool(re.search(r"^subject\s*:", text, re.I | re.M))
         cc = _people(text, "cc")
-        group, reply_all = len(_people(text, "to")) + len(cc) > 1, len(cc) > 1 or bool(out.get("reply_all"))
-    body = re.sub(r"\bCould (you|we)\b", r"Can \1", out["body"])             # rule 3: plain asks
+        group, reply_all = len(_people(text, "to")) + len(cc) > 1, bool(cc) or bool(out.get("reply_all"))
+    body = re.sub(r"\bCould (you|we)\b", r"Can \1", out["body"].translate(PLAIN))   # rule 3: plain asks
     body = re.sub(r"!+", ".", body)                                          # rule 16
     lines = [line.strip() for line in body.splitlines() if line.strip()]
-    if group and not out.get("to_only") and lines[0].startswith("Dear "):
-        lines[0] = "Dear All,"                                               # rule 5: a group, unless it's their job
+    while len(lines) > 1 and ENDING.match(lines[-1]):
+        lines.pop()
+    lines += ["Thank you for your time and support.", "Regards,", "Parshv Mehta"]       # rules 8 and 9, exactly
+    hello = re.search(r"^(?:hi|hello|hey|dear|respected|good (?:morning|afternoon))\b.*$", text, re.I | re.M)
+    if group and hello and GREETS_MANY.search(hello.group(0)) and lines[0].startswith("Dear "):
+        lines[0] = "Dear All,"                                               # rule 5: my draft greets several
     body = "\n\n".join(lines).replace("Regards,\n\n", "Regards,\n")         # a blank line between the parts
-    subject = re.sub(r"\s*!+", "", out.get("subject") or "").strip()
+    subject = re.sub(r"\s*!+", "", (out.get("subject") or "").translate(PLAIN)).strip()
+    subject = re.sub(r"^(?:re\s*:\s*)+", "Re: ", subject, flags=re.I)        # "Re: Re: x" -> "Re: x"
     email = ("Subject: %s\n\n" % subject if subject else "") + body
     _email.update(text=email, at=time.time(), hwnd=hwnd, with_subject=with_subject, group=group, reply_all=reply_all)
     if not question and re.match(r"Dear (?:Sir|Ma'am),", body):
         question = "What's their name, for the greeting?"                     # never guessed (rule 12)
     spoken = "Rewritten." + (" The subject's on the card." if subject and not with_subject else "")
     if reply_all:
-        spoken += " More than one person is CC'd, so reply all."
+        spoken += " Others are CC'd, so reply all."
     left_out = (out.get("left_out") or "").strip().rstrip(".")
     if left_out:
         spoken += " I left out %s. Tell me if any of it should stay, or send it in another email." % left_out
