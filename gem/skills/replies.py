@@ -206,15 +206,24 @@ EMAIL_ASK = EMAIL_RULES + (
     "\nYou get my email, and maybe a request (a change, or my answer to your question). Always write the email "
     "first, even when unsure: never ask instead of writing. With a request, start from my email and change only what "
     "the request is about, keeping everything else it says; capitalize names properly, and don't ask about anything "
-    "my request already answered. Before replying, check the body again: exactly one ask, "
-    "said once (no second line like \"Please let me know your availability\"), no instructions, and a deadline "
-    "becomes a light hint (\"this week\"). Reply with JSON only: {\"fine\": true only if my draft "
+    "my request already answered. Before replying, check the body again: exactly one ask, said once as one plain "
+    "question (\"Can you tell me...\", not \"Can we have confirmation...\"; no second line like \"Please let me "
+    "know your availability\"); the ask names each thing once, plainly, without \"including ...\", examples or other "
+    "side details (\"the student data, including parent emails\" becomes \"the student data\"); no "
+    "instructions; no deadline, day or time to reply by, at most a vague hint like \"this week\". Reply with JSON "
+    "only: {\"fine\": true only if my draft "
     "already follows every rule and there's no request (then subject and body are empty), \"subject\": \"...\", "
     "\"body\": \"greeting to sign-off, plain text, lines separated by \\n\", \"question\": \"one short question about "
     "anything essential that's missing or unclear (a greeting without the person's name always is), or empty\", "
     "\"reply_all\": true if more than one person is CC'd}")
 
-_email = {"text": "", "at": 0.0, "hwnd": 0, "with_subject": False}
+_email = {"text": "", "at": 0.0, "hwnd": 0, "with_subject": False, "group": False, "reply_all": False}
+
+
+def _people(text, field):
+    """Names on a "To:" or "CC:" line of the selected email."""
+    m = re.search(r"^%s\s*:\s*(.+)$" % field, text, re.I | re.M)
+    return [p for p in re.split(r"[,;]|\band\b", m.group(1)) if p.strip()] if m else []
 
 
 @action("email_rewrite", "Rewrite the selected email to school staff by the user's email rules and paste it over "
@@ -233,17 +242,24 @@ def email_rewrite(instruction=""):
     question = (out.get("question") or "").strip()
     if out.get("fine") or not (out.get("body") or "").strip():
         return ("That email already follows your rules, so I left it. " + question).strip()
+    if again:
+        with_subject, group, reply_all = _email["with_subject"], _email["group"], _email["reply_all"]
+    else:
+        # Selected with its subject line: it gets one back. Just the body (a compose box): the subject's on the card.
+        with_subject = bool(re.search(r"^subject\s*:", text, re.I | re.M))
+        cc = _people(text, "cc")
+        group, reply_all = len(_people(text, "to")) + len(cc) > 1, len(cc) > 1 or bool(out.get("reply_all"))
     lines = [line.strip() for line in out["body"].splitlines() if line.strip()]
+    if group and lines[0].startswith("Dear "):
+        lines[0] = "Dear All,"                                               # rule 5: a group
     body = "\n\n".join(lines).replace("Regards,\n\n", "Regards,\n")         # a blank line between the parts
     subject = (out.get("subject") or "").strip()
     email = ("Subject: %s\n\n" % subject if subject else "") + body
-    # Selected with its subject line: it gets one back. Just the body (a compose box): the subject goes on the card.
-    with_subject = _email["with_subject"] if again else bool(re.match(r"\s*subject\s*:", text, re.I))
-    _email.update(text=email, at=time.time(), hwnd=hwnd, with_subject=with_subject)
+    _email.update(text=email, at=time.time(), hwnd=hwnd, with_subject=with_subject, group=group, reply_all=reply_all)
     if not question and re.match(r"Dear (?:Sir|Ma'am),", body):
         question = "What's their name, for the greeting?"                     # never guessed (rule 12)
     spoken = "Rewritten." + (" The subject's on the card." if subject and not with_subject else "")
-    if out.get("reply_all"):
+    if reply_all:
         spoken += " More than one person is CC'd, so reply all."
     paste = email if with_subject else body
     if foreground_window() != hwnd:

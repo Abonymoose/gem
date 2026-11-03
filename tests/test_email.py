@@ -63,6 +63,17 @@ class RewriteTest(unittest.TestCase):
             "Subject: Meeting request\n\nDear Sir,\n\nCan we meet this week?\n\nRegards,\nParshv Mehta", replace=False)
         self.assertTrue(res.endswith("What's their name, for the greeting?"))
 
+    def test_group_gets_dear_all_and_reply_all(self):
+        self.selected[0] = ("To: Varsha Ma'am\nCC: Jayadev Sir, Meera Ma'am, Helen Ma'am\nSubject: Re: PTM Now Pilot "
+                            "Update\n\nHello Ma'ams and Sir,\nJust wanted to quickly touch base!")
+        self.brain.complete.return_value = {"fine": False, "subject": "Re: PTM Now Pilot Update", "question": "",
+                                            "body": "Dear Varsha Ma'am,\nCan you tell me?\nRegards,\nParshv Mehta"}
+        res = replies.email_rewrite()
+        replies._put_in_box.assert_called_once_with(
+            "Subject: Re: PTM Now Pilot Update\n\nDear All,\n\nCan you tell me?\n\nRegards,\nParshv Mehta",
+            replace=False)                                                   # subject after To/CC still counts
+        self.assertIn("reply all", res)
+
     def test_fine_draft_is_left_alone(self):
         self.brain.complete.return_value = {"fine": True, "subject": "", "body": "", "question": ""}
         self.assertIn("already follows your rules", replies.email_rewrite())
