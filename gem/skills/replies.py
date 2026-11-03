@@ -13,6 +13,7 @@ which checks it's still the same chat first).
 """
 import logging
 import math
+import re
 import time
 
 from ..actions import ActionError, action
@@ -204,13 +205,16 @@ You write and rewrite emails for me. I am a student writing to school staff, so 
 EMAIL_ASK = EMAIL_RULES + (
     "\nYou get my email, and maybe a request (a change, or my answer to your question). Always write the email "
     "first, even when unsure: never ask instead of writing. With a request, start from my email and change only what "
-    "the request is about, keeping everything else it says. Reply with JSON only: {\"fine\": true only if my draft "
+    "the request is about, keeping everything else it says; capitalize names properly, and don't ask about anything "
+    "my request already answered. Before replying, check the body again: exactly one ask, "
+    "said once (no second line like \"Please let me know your availability\"), no instructions, and a deadline "
+    "becomes a light hint (\"this week\"). Reply with JSON only: {\"fine\": true only if my draft "
     "already follows every rule and there's no request (then subject and body are empty), \"subject\": \"...\", "
     "\"body\": \"greeting to sign-off, plain text, lines separated by \\n\", \"question\": \"one short question about "
     "anything essential that's missing or unclear (a greeting without the person's name always is), or empty\", "
     "\"reply_all\": true if more than one person is CC'd}")
 
-_email = {"text": "", "at": 0.0, "hwnd": 0}
+_email = {"text": "", "at": 0.0, "hwnd": 0, "with_subject": False}
 
 
 @action("email_rewrite", "Rewrite the selected email to school staff by the user's email rules and paste it over "
@@ -229,15 +233,22 @@ def email_rewrite(instruction=""):
     question = (out.get("question") or "").strip()
     if out.get("fine") or not (out.get("body") or "").strip():
         return ("That email already follows your rules, so I left it. " + question).strip()
-    body, subject = out["body"].strip(), (out.get("subject") or "").strip()
+    lines = [line.strip() for line in out["body"].splitlines() if line.strip()]
+    body = "\n\n".join(lines).replace("Regards,\n\n", "Regards,\n")         # a blank line between the parts
+    subject = (out.get("subject") or "").strip()
     email = ("Subject: %s\n\n" % subject if subject else "") + body
-    _email.update(text=email, at=time.time(), hwnd=hwnd)
-    spoken = "Rewritten. The subject's on the card." if subject else "Rewritten."
+    # Selected with its subject line: it gets one back. Just the body (a compose box): the subject goes on the card.
+    with_subject = _email["with_subject"] if again else bool(re.match(r"\s*subject\s*:", text, re.I))
+    _email.update(text=email, at=time.time(), hwnd=hwnd, with_subject=with_subject)
+    if not question and re.match(r"Dear (?:Sir|Ma'am),", body):
+        question = "What's their name, for the greeting?"                     # never guessed (rule 12)
+    spoken = "Rewritten." + (" The subject's on the card." if subject and not with_subject else "")
     if out.get("reply_all"):
         spoken += " More than one person is CC'd, so reply all."
+    paste = email if with_subject else body
     if foreground_window() != hwnd:
-        set_clipboard(body)
+        set_clipboard(paste)
         spoken = "You switched windows, so it's on your clipboard instead. " + spoken
     else:
-        _put_in_box(body, replace=again)
+        _put_in_box(paste, replace=again)
     return card("draft", (spoken + " " + question).strip(), note=email, title="Email")

@@ -39,7 +39,9 @@ class RewriteTest(unittest.TestCase):
             "body": "Dear Shah Sir,\nI hope you are doing well.\nCan we meet this week?\nThank you for your time "
                     "and support.\nRegards,\nParshv Mehta"}
         res = replies.email_rewrite()
-        replies._put_in_box.assert_called_once_with(self.brain.complete.return_value["body"], replace=False)
+        replies._put_in_box.assert_called_once_with(
+            "Dear Shah Sir,\n\nI hope you are doing well.\n\nCan we meet this week?\n\nThank you for your time and "
+            "support.\n\nRegards,\nParshv Mehta", replace=False)          # paragraphs; just the body (no subject selected)
         self.assertTrue(res.endswith("Which day works for you?"))           # the question comes after the email
         self.assertIn("Subject: Meeting\n\nDear Shah Sir,", res.card["note"])
 
@@ -50,7 +52,16 @@ class RewriteTest(unittest.TestCase):
         request = self.brain.complete.call_args[0][1]
         self.assertIn("Subject: Meeting", request)                          # the email Gem pasted, not the old draft
         self.assertIn("Request: thursday period 5", request)
-        replies._put_in_box.assert_called_with("Dear Shah Sir,\n...Thursday...", replace=True)
+        replies._put_in_box.assert_called_with("Dear Shah Sir,\n\n...Thursday...", replace=True)
+
+    def test_selected_subject_comes_back_and_a_missing_name_is_asked(self):
+        self.selected[0] = "Subject: URGENT!!! Meeting needed\n\nHi Sir,\nKindly let me know by Friday..."
+        self.brain.complete.return_value = {"fine": False, "subject": "Meeting request", "question": "",
+                                            "body": "Dear Sir,\nCan we meet this week?\nRegards,\nParshv Mehta"}
+        res = replies.email_rewrite()
+        replies._put_in_box.assert_called_once_with(
+            "Subject: Meeting request\n\nDear Sir,\n\nCan we meet this week?\n\nRegards,\nParshv Mehta", replace=False)
+        self.assertTrue(res.endswith("What's their name, for the greeting?"))
 
     def test_fine_draft_is_left_alone(self):
         self.brain.complete.return_value = {"fine": True, "subject": "", "body": "", "question": ""}
