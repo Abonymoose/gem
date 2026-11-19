@@ -40,6 +40,7 @@ class Bridge(QObject):
     highlight = Signal(object)
     suggest = Signal(object)
     spotlight = Signal(bool)
+    clock = Signal(bool)
 
 
 class CommandBar(QWidget):
@@ -157,6 +158,7 @@ class Overlay:
         self.bridge.highlight.connect(self._on_highlight)
         self.bridge.suggest.connect(self._on_suggest)
         self.bridge.spotlight.connect(self._on_spotlight)
+        self.bridge.clock.connect(self._on_clock)
 
         self.screen_geo = QGuiApplication.primaryScreen().geometry()
         QGuiApplication.primaryScreen().geometryChanged.connect(self._screen_changed)
@@ -164,6 +166,7 @@ class Overlay:
         self.bar = CommandBar(self)
         self.highlights = HighlightOverlay()
         self.dashboard = None
+        self.clock = None
         self.menu_open = False
 
         self._last = time.monotonic()
@@ -191,6 +194,9 @@ class Overlay:
     def spotlight(self, on):
         """Dim everything except the window in front (follows you) until turned off."""
         self.bridge.spotlight.emit(bool(on))
+
+    def show_clock(self, on):
+        self.bridge.clock.emit(bool(on))
 
     def suggest(self, monitor, items, seconds=40.0):
         """Autofill: show what goes where (items: dicts with box 0..1, label, text, why, n, blank, dark)."""
@@ -246,6 +252,14 @@ class Overlay:
 
     def open_command_bar_now(self):
         self.bar.open_bar(self.screen_geo.center().x(), self.screen_geo.top() + 40)
+
+    def _on_clock(self, on):
+        if self.clock is None:
+            from .clock import ClockWindow
+            self.clock = ClockWindow()
+        self.clock.setVisible(on)
+        if on:
+            self.clock.raise_()
 
     def _open_dashboard(self, page):
         try:

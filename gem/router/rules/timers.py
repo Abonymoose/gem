@@ -25,6 +25,11 @@ def register(rule):
     def _(m, t):
         return Match("clock", {"what": "date"})
 
+    @rule(r"^(?:open|show|start|launch|bring up)(?: me)? (?:the |your |gem's |my )?(?:real )?clock(?: app| window)?$|"
+          r"^(?:close|hide) (?:the |your |gem's |my )?(?:real )?clock(?: app| window)?$")
+    def _(m, t):
+        return Match("clock_window", {"show": not t.startswith(("close", "hide"))})
+
     # Timers, alarms, reminders
     @rule(r"^(?:set |start |make |put on )?(?:an? )?(\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)"
           r"(?:\s*(?:and\s*)?\d+\s*(?:minutes?|mins?|seconds?|secs?))?)\s+timer(?:\s+(?:for|called|named)\s+(.+))?$")

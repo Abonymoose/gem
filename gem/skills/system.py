@@ -25,9 +25,18 @@ log = logging.getLogger("gem.system")
 
 @action("clock", "Current time or date.", "what: time|date", ai=False)
 def clock(what="time"):
-    now = datetime.datetime.now()
+    from .. import nettime
+    now = nettime.now()                     # the real time, even when the PC's clock is off
     t, d = now.strftime("%I:%M %p").lstrip("0"), now.strftime("%A, %B %d, %Y").replace(" 0", " ")
     return card("clock", "It's %s." % (d if what == "date" else t), time=t, date=d)
+
+
+@action("clock_window", "Show or close Gem's clock window: the real time from the internet, even when the PC's "
+        "clock is off.", "show?: bool")
+def clock_window(show=True):
+    if svc.overlay:
+        svc.overlay.show_clock(show)
+    return None if show else "Closed the clock."
 
 
 # ── Volume ───────────────────────────────────────────────────────────────────

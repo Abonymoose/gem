@@ -222,6 +222,8 @@ def main():
     headsup.start()
     svc.listener.start()
     svc.scheduler.start()
+    from . import nettime
+    nettime.start()                             # the real time, for when the PC's clock is off
     CallWatcher(cfg["calls"]).start()
     svc.tray.start()
 

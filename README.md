@@ -113,6 +113,7 @@ When every AI model is at its per-minute limit, the island shows **AI busy** wit
 | Clipboard | "what did I copy", "paste what I copied before", "paste clip 3", "paste the link about the essay" (remembered in memory only; passwords and keys are skipped) |
 | Reading | Select text and say "read this to me" (with nothing selected, Gem reads the window you're in); "read this page", "read this email", "read my screen"; "keep reading" for the rest of a long page; "copy that" copies Gem's last answer |
 | Habits | "I drank a glass of water", "log 20 pushups", "I had a coffee", "how much water today" (with a weekly chart and streaks) |
+| Real clock | For when the PC's own clock is off (a BIOS that loses or shifts the time): Gem checks the real time online every half hour. "Open the clock" shows a small always-on-top clock with the real time and how far off the PC is (drag it anywhere; double-click or Esc closes it, or "close the clock"). "What time is it" answers with the real time too |
 | Time zones | "what time is it in Tokyo", "3 pm EST in IST", "when it's 9 am in London what time is it here", "add Tokyo to my world clock", "world clock" |
 | Countdowns | "how many days until Christmas", "how long until Friday", "my birthday is March 3" → "days until my birthday" |
 | Later | "in 20 minutes pause the music", "open Spotify at 7 pm", "at 6 pm start study mode", "sleep timer 30 minutes" |

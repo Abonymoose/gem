@@ -314,6 +314,41 @@ class CloseAppTest(unittest.TestCase):
         self.apps.close_window.assert_not_called()
 
 
+class RealTimeTest(unittest.TestCase):
+    """The clock for a PC whose BIOS clock is off: the offset, the status line, and the PC's clock being changed."""
+
+    def setUp(self):
+        from gem import nettime
+        self.nt = nettime
+        self.addCleanup(nettime._state.update, offset=None)
+
+    def test_offset_from_a_servers_date(self):
+        reply = mock.Mock(headers={"Date": "Thu, 19 Nov 2026 13:25:44 GMT"})
+        pc = datetime.datetime(2026, 11, 19, 7, 55, 44, tzinfo=datetime.timezone.utc).timestamp()   # 5.5 h behind
+        with mock.patch.object(self.nt.requests, "head", return_value=reply), \
+                mock.patch.object(self.nt.time, "time", return_value=pc):
+            self.assertAlmostEqual(self.nt.measure(), 5.5 * 3600 + 0.5, delta=0.01)
+
+    def test_status_and_a_clock_change(self):
+        self.assertIn("Checking", self.nt.status())
+        self.nt._state["offset"] = 5.5 * 3600
+        self.assertEqual(self.nt.status(), "In sync · your PC is 5 hours and 30 minutes behind")
+        real = time.time() + 5.5 * 3600
+        self.assertAlmostEqual(self.nt.now().timestamp(), real, delta=1)
+        # Windows fixes the PC's clock (+5.5 h) between two ticks: the offset goes, the real time stays.
+        wall, mono = time.time() - 5.5 * 3600, time.monotonic()
+        self.nt._tick(wall, mono)
+        self.assertAlmostEqual(self.nt.offset(), 0, delta=1)
+        self.assertIn("right", self.nt.status())
+
+    def test_commands(self):
+        self.assertEqual((route("open the clock").action, route("open the clock").args), ("clock_window", {"show": True}))
+        self.assertEqual(route("show gem's clock app").args, {"show": True})
+        self.assertEqual(route("close the clock").args, {"show": False})
+        self.assertEqual(route("show the world clock").action, "world_clock")
+        self.assertEqual(route("what time is it").action, "clock")
+
+
 class BrokenFileTest(unittest.TestCase):
     def test_unreadable_file_is_kept_not_overwritten(self):
         import os
