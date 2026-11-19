@@ -40,9 +40,14 @@ def offset():
     return _state["offset"]
 
 
+def time_now():
+    """The real time.time(): what timers, alarms, reminders and classes are set and checked by."""
+    return time.time() + (_state["offset"] or 0.0)
+
+
 def now():
     """The real local time (the PC's own until the first check worked)."""
-    return datetime.datetime.fromtimestamp(time.time() + (_state["offset"] or 0.0))
+    return datetime.datetime.fromtimestamp(time_now())
 
 
 def status():

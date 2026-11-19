@@ -20,6 +20,7 @@ from ..actions import ActionError, action
 from ..cards import card
 from . import messaging
 from ..parse import duration_phrase, parse_duration, parse_when
+from .. import nettime
 from ..runtime import svc
 from ..winapi import copy_selection, foreground_window, get_clipboard, press, release_modifiers, set_clipboard
 
@@ -39,7 +40,7 @@ def _when():
     until = svc.state.away_until
     if not until or until == math.inf:
         return "soon"
-    left = until - time.time()
+    left = until - nettime.time_now()
     if left <= 60:
         return "any minute now"
     if left > 2 * 3600:
@@ -68,17 +69,17 @@ def away_start(minutes=None, until=None):
     at = None
     if minutes:
         try:
-            at = time.time() + float(minutes) * 60
+            at = nettime.time_now() + float(minutes) * 60
         except (TypeError, ValueError):
             secs = parse_duration(str(minutes))
-            at = time.time() + secs if secs else None
+            at = nettime.time_now() + secs if secs else None
     if at is None and until:
         dt, _ = parse_when(str(until))
         at = dt.timestamp() if dt else None
     svc.state.update(away_until=at or math.inf)
     when = _when()
     return card("alarm", "Got it, you're away. I'll say you're back %s." % when if at else "Got it, you're away.",
-                title="Away", at=at or time.time(), subtitle="Say \"tell them I'm away\" in a chat")
+                title="Away", at=at or nettime.time_now(), subtitle="Say \"tell them I'm away\" in a chat")
 
 
 @action("away_end", "The user is back; stop saying he's away.")

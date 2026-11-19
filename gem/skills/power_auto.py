@@ -9,6 +9,7 @@ import time
 
 from ..actions import ActionError, action
 from ..cards import card
+from .. import nettime
 from ..runtime import say
 
 log = logging.getLogger("gem.power_auto")
@@ -119,7 +120,7 @@ def _plan(power, trigger, minutes):
     threading.Thread(target=_watch, args=(job["id"], power, trigger, minutes), name="power-when", daemon=True).start()
     text = "Okay, I'll %s %s. I'll warn you a minute before." % (WORDS[power], _when(trigger, minutes))
     if trigger == "time":
-        return card("alarm", text, title="Then %s" % WORDS[power], at=time.time() + minutes * 60,
+        return card("alarm", text, title="Then %s" % WORDS[power], at=nettime.time_now() + minutes * 60,
                     subtitle="In " + _mins(minutes))
     return text
 

@@ -8,12 +8,12 @@ import datetime
 import functools
 import math
 import os
-import time
 
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (QColor, QConicalGradient, QFont, QFontMetrics, QImage, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPolygonF, QRadialGradient)
 
+from .. import nettime
 from . import theme as T
 
 
@@ -471,7 +471,7 @@ class CardContent:
 
     def _paint_timer(self, p, x, y, w):
         c = self.card
-        left = max(0.0, c.get("ends_at", 0) - time.time())
+        left = max(0.0, c.get("ends_at", 0) - nettime.time_now())
         total = max(1.0, float(c.get("total") or 1))
         draw_ring(p, x + 36, y + 38, 32, left / total, 6)
         p.setFont(F_RING)
@@ -485,7 +485,7 @@ class CardContent:
         p.setFont(F_SMALL)
         p.setPen(T.TEXT_DIM)
         p.drawText(QRectF(x + 92, y + 38, w - 92, 22), Qt.AlignLeft | Qt.AlignVCenter,
-                   "Done at %s" % _clock(c.get("ends_at", time.time())) if left > 0 else "Done")
+                   "Done at %s" % _clock(c.get("ends_at", nettime.time_now())) if left > 0 else "Done")
 
     _paint_focus = _paint_timer
 
@@ -500,9 +500,9 @@ class CardContent:
         draw_bell(p, x + 26, y + 28, 26, QColor(255, 255, 255))
         p.setFont(F_TIME)
         p.setPen(T.TEXT)
-        when = c.get("at", time.time())
+        when = c.get("at", nettime.time_now())
         day = datetime.datetime.fromtimestamp(when).date()
-        today = datetime.date.today()
+        today = nettime.now().date()
         p.drawText(QRectF(x + 68, y - 2, w - 68, 34), Qt.AlignLeft | Qt.AlignVCenter, _clock(when))
         dayname = "Today" if day == today else "Tomorrow" if day == today + datetime.timedelta(days=1) \
             else datetime.datetime.fromtimestamp(when).strftime("%A")
@@ -523,14 +523,14 @@ class CardContent:
             yy = y + i * 32
             if it["kind"] == "timer":
                 frozen = it.get("paused_left")
-                left = frozen if frozen is not None else max(0.0, it["at"] - time.time())
+                left = frozen if frozen is not None else max(0.0, it["at"] - nettime.time_now())
                 draw_ring(p, x + 11, yy + 13, 9, left / max(1.0, it.get("total") or 1), 3)
                 right = ("Paused " if frozen is not None else "") + _countdown(left)
                 name = (it.get("label") or "Timer").capitalize()
             else:
                 draw_bell(p, x + 11, yy + 13, 16, T.SOFT)
                 right = _clock(it["at"])
-                if datetime.datetime.fromtimestamp(it["at"]).date() != datetime.date.today():
+                if datetime.datetime.fromtimestamp(it["at"]).date() != nettime.now().date():
                     right = datetime.datetime.fromtimestamp(it["at"]).strftime("%a ") + right
                 name = (it.get("message") or it.get("label") or it["kind"]).capitalize()
             p.setFont(F_ROW)

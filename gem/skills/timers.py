@@ -19,6 +19,7 @@ from ..actions import ActionError, action
 from ..cards import card
 from ..config import PROJECT_DIR, JsonStore, runtime
 from ..parse import WEEKDAYS, clock_phrase, duration_phrase, normalize_time_words, parse_duration, parse_when
+from .. import nettime
 from ..runtime import caption, notify, svc
 from ..winapi import idle_seconds
 from . import undo
@@ -55,7 +56,7 @@ def _migrate():
 
 def _add(kind, at, label="", message="", url=None):
     item = {"id": uuid.uuid4().hex[:8], "kind": kind, "label": label.strip(), "at": at.timestamp(),
-            "message": message.strip(), "url": url, "created": time.time()}
+            "message": message.strip(), "url": url, "created": nettime.time_now()}
     with store as data:
         data["items"].append(item)
     return item
@@ -79,7 +80,7 @@ def remaining(item, now=None):
     """Seconds left on a timer, frozen while it's paused."""
     if item.get("paused_left") is not None:
         return item["paused_left"]
-    return max(0.0, item["at"] - (now or time.time()))
+    return max(0.0, item["at"] - (now or nettime.time_now()))
 
 
 def paused(item):
@@ -87,7 +88,7 @@ def paused(item):
 
 
 def _describe(item, now=None):
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     at = datetime.datetime.fromtimestamp(item["at"])
     if item["kind"] == "timer":
         name = "a %s timer" % item["label"] if item["label"] else "a timer"
@@ -107,7 +108,7 @@ def _describe(item, now=None):
 def next_repeat(item, now=None):
     """When a repeating item is next due after now. It keeps its slot (a daily 9 AM reminder stays at 9 even if it
     went off late because the PC was asleep), counted in local time so clock changes don't shift it."""
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     step = datetime.timedelta(minutes=item["repeat_minutes"])
     nxt = datetime.datetime.fromtimestamp(item["at"]) + step
     if nxt <= now:
@@ -147,7 +148,7 @@ def set_timer(minutes=0, seconds=0, label=""):
     if label:
         with runtime as data:
             data.setdefault("timer_lengths", {})[label.lower()] = total
-    item = _add("timer", datetime.datetime.now() + datetime.timedelta(seconds=total), label=label)
+    item = _add("timer", nettime.now() + datetime.timedelta(seconds=total), label=label)
     size = re.sub(r"\b(hour|minute|second)s\b", r"\1", duration_phrase(total)).capitalize()   # "2 minute timer"
     text = "%s timer started." % size if not label else "%s timer for %s started." % (size, label)
     return card("timer", text, label=label, ends_at=item["at"], total=total)
@@ -172,7 +173,7 @@ def set_reminder(message="", time=None, minutes=None, repeat_minutes=None):
     at = None
     if minutes or (repeat and not time):
         try:
-            at = datetime.datetime.now() + datetime.timedelta(minutes=float(minutes or repeat))
+            at = nettime.now() + datetime.timedelta(minutes=float(minutes or repeat))
         except (TypeError, ValueError):
             at = None
     if at is None and time:
@@ -216,7 +217,7 @@ def parse_repeat(text, now=None):
     (8 AM, 7 PM, 9 PM unless a time is said) and every Monday (at 9 AM unless a time is said). With no first
     time, the first reminder comes one repeat from now.
     """
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     t = normalize_time_words(text)
     m = _EVERY.search(t)
     if not m:
@@ -264,7 +265,7 @@ def list_timers():
     items = _items()
     if not items:
         return card("timers", "You have no timers, alarms or reminders.", items=[])
-    now = datetime.datetime.now()
+    now = nettime.now()
     descs = [_describe(i, now) for i in items[:6]]
     more = " and %d more" % (len(items) - 6) if len(items) > 6 else ""
     rows = [{"kind": i["kind"], "label": i["label"], "message": i["message"], "at": i["at"],
@@ -306,7 +307,7 @@ def timer_adjust(seconds=0, label=""):
         seconds = float(seconds)
     except (TypeError, ValueError):
         raise ActionError("How much time?")
-    now = time.time()
+    now = nettime.time_now()
     with store as data:
         for i in data["items"]:
             if i["id"] == t["id"]:
@@ -332,7 +333,7 @@ def timer_pause(pause=True, label=""):
         if other:
             return "%s is already %s." % (_timer_name(other).capitalize(), "paused" if pause else "running")
         raise ActionError("No timers are running.")
-    now = time.time()
+    now = nettime.time_now()
     with store as data:
         for i in data["items"]:
             if i["id"] != t["id"]:
@@ -389,7 +390,7 @@ def snooze_alarm(minutes=9):
     if not last or time.time() - last[1] > 600:
         return "Nothing has gone off recently."
     item = last[0]
-    at = datetime.datetime.now() + datetime.timedelta(minutes=float(minutes or 9))
+    at = nettime.now() + datetime.timedelta(minutes=float(minutes or 9))
     if item["kind"] == "event":
         _add("reminder", at, message=item["message"] or item["label"])
     else:
@@ -411,7 +412,7 @@ def _class_dt(entry, day_offset, now):
 
 @action("schedule_list", "Weekly class schedule.", "day?: today|tomorrow|<weekday>|week")
 def schedule_list(day="today"):
-    now = datetime.datetime.now()
+    now = nettime.now()
     day = (day or "today").lower()
     entries = _schedule()
     if day == "week":
@@ -443,7 +444,7 @@ def schedule_list(day="today"):
 
 @action("next_class", "Next scheduled class.")
 def next_class():
-    now = datetime.datetime.now()
+    now = nettime.now()
     best = None
     for e in _schedule():
         for offset in range(0, 8):
@@ -509,7 +510,7 @@ def schedule_command(command="", time=None, minutes=None):
     at = None
     if minutes:
         try:
-            at = datetime.datetime.now() + datetime.timedelta(minutes=float(minutes))
+            at = nettime.now() + datetime.timedelta(minutes=float(minutes))
         except (TypeError, ValueError):
             at = None
     if at is None and time:
@@ -523,11 +524,11 @@ def schedule_command(command="", time=None, minutes=None):
                           "instead.")
     if m and m.action == "power" and m.args.get("command") in ("shutdown", "restart", "sleep", "hibernate"):
         from .power_auto import power_when            # it warns a minute before, and you can cancel
-        return power_when(m.args["command"], "time", max(1.0, (at - datetime.datetime.now()).total_seconds() / 60.0))
+        return power_when(m.args["command"], "time", max(1.0, (at - nettime.now()).total_seconds() / 60.0))
     if m and m.action == "power" and m.args.get("command") == "sign_out":
         raise ActionError("I can't sign you out later. Ask me when you're ready.")
     _add("command", at, message=command)
-    left = (at - datetime.datetime.now()).total_seconds()
+    left = (at - nettime.now()).total_seconds()
     when = "in " + duration_phrase(round(left / 60) * 60 if left > 90 else left) if left < 3 * 3600 \
         else "at " + clock_phrase(at)
     return card("alarm", "Okay, I'll %s %s." % (command, when), title="Scheduled", at=at.timestamp(),
@@ -590,7 +591,7 @@ def stopwatch(command="start"):
 
 def upcoming_class(within_minutes=15):
     """(name, datetime) of a class starting within the next N minutes, else None."""
-    now = datetime.datetime.now()
+    now = nettime.now()
     day = WEEKDAYS[now.weekday()]
     best = None
     for e in _schedule():
@@ -617,7 +618,7 @@ class Scheduler:
         threading.Thread(target=self._run, name="scheduler", daemon=True).start()
 
     def _missed(self):
-        now = time.time()
+        now = nettime.time_now()
         due = [i for i in _items() if i["at"] <= now]
         if not due:
             return
@@ -711,13 +712,13 @@ class Scheduler:
         last_minute = None
         while True:
             try:
-                now = time.time()
+                now = nettime.time_now()
                 due = [i for i in _items() if i["at"] <= now]
                 if due:
                     _remove({i["id"] for i in due})
                     for item in due:
                         self._fire(item)
-                dt = datetime.datetime.now()
+                dt = nettime.now()
                 minute = dt.strftime("%H%M")
                 if minute != last_minute:
                     last_minute = minute

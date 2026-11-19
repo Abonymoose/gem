@@ -20,6 +20,7 @@ import types
 import numpy as np
 import requests
 
+from .. import nettime
 from .. import safety
 from ..actions import ActionError, action
 from ..brain import BrainUnavailable
@@ -109,7 +110,7 @@ class _Track:
 class Recorder:
     def __init__(self):
         self.started = time.time()
-        self.stamp = datetime.datetime.now()
+        self.stamp = nettime.now()
         self.tmp = os.path.join(DATA_DIR, "call_notes_tmp", self.stamp.strftime("%Y%m%d-%H%M%S"))
         os.makedirs(self.tmp, exist_ok=True)
         self.mic = _Track(os.path.join(self.tmp, "mic.raw"), self.started)
@@ -375,7 +376,7 @@ def _summary(lines, started):
 def _reminders(summary, now=None):
     """The REMINDERS section split off the summary: (summary without it, [(when, what)] still to come)."""
     head, _, tail = (summary or "").partition("\nREMINDERS")
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     found = []
     for m in re.finditer(r"^-\s*(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2})\s*\|\s*(.+)$", tail, re.M):
         try:

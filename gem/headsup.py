@@ -10,6 +10,7 @@ import psutil
 import requests
 
 from .config import JsonStore
+from . import nettime
 from .runtime import caption, notify, svc
 
 log = logging.getLogger("gem.headsup")
@@ -133,7 +134,7 @@ def _rain():
     times = d.get("minutely_15", {}).get("time") or []
     rain = d.get("minutely_15", {}).get("precipitation") or []
     import datetime
-    now = datetime.datetime.now()
+    now = nettime.now()
     for t, mm in zip(times, rain):
         when = datetime.datetime.fromisoformat(t)
         if mm and mm >= 0.2 and when > now:
@@ -152,7 +153,7 @@ def _date_phrase(key, when):
 def _dates():
     import datetime
     from .skills.world import store
-    now = datetime.datetime.now()
+    now = nettime.now()
     today = now.date()
     for key, d in (store.data.get("dates") or {}).items():
         if key in ("birthday", "my birthday"):

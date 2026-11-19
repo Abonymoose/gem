@@ -341,6 +341,17 @@ class RealTimeTest(unittest.TestCase):
         self.assertAlmostEqual(self.nt.offset(), 0, delta=1)
         self.assertIn("right", self.nt.status())
 
+    def test_timers_and_alarms_follow_the_real_time(self):
+        self.nt._state["offset"] = 5.5 * 3600                   # the PC's clock is 5.5 hours behind
+        at, _ = timers.parse_when("at 7 pm", self.nt.now().replace(hour=12, minute=0))
+        self.assertEqual(at.strftime("%H:%M"), "19:00")
+        at, _ = timers.parse_when("in 10 minutes")
+        self.assertAlmostEqual(at.timestamp(), self.nt.time_now() + 600, delta=2)
+        timers.set_timer(minutes=10, label="realtime test")
+        item = next(i for i in timers._items("timer") if i["label"] == "realtime test")
+        self.addCleanup(timers._remove, {item["id"]})
+        self.assertAlmostEqual(timers.remaining(item), 600, delta=2)       # not 5.5 hours and 10 minutes
+
     def test_commands(self):
         self.assertEqual((route("open the clock").action, route("open the clock").args), ("clock_window", {"show": True}))
         self.assertEqual(route("show gem's clock app").args, {"show": True})

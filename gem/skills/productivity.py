@@ -9,6 +9,7 @@ import time
 from ..actions import ActionError, action
 from ..cards import card
 from ..config import NOTES_FILE, JsonStore
+from .. import nettime
 from ..runtime import svc
 
 log = logging.getLogger("gem.productivity")
@@ -151,7 +152,7 @@ def focus_start(minutes=None):
     minutes = float(minutes or svc.config["focus"].get("work_minutes", 25))
     svc.state.update(focus_until=time.time() + minutes * 60)
     return card("focus", "Focus session started for %g minute%s." % (minutes, "" if minutes == 1 else "s"),
-                ends_at=svc.state.focus_until,
+                ends_at=nettime.time_now() + minutes * 60,         # cards count down in the real time
                 total=minutes * 60, phase="focus")
 
 
@@ -171,7 +172,7 @@ def focus_status():
     left = svc.state.focus_until - time.time()
     total = float(svc.config["focus"].get("work_minutes", 25)) * 60
     return card("focus", "%s left in this session." % duration_phrase(left - left % 60 or left).capitalize(),
-                ends_at=svc.state.focus_until, total=max(total, left), phase="focus")
+                ends_at=nettime.time_now() + left, total=max(total, left), phase="focus")
 
 
 # ── Briefing ─────────────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ def focus_status():
 @action("briefing", "Daily briefing: date, weather, schedule, reminders, to-dos.")
 def briefing():
     from . import timers, web
-    now = datetime.datetime.now()
+    now = nettime.now()
     part = "evening" if now.hour < 5 else "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
     name = svc.config.get("user_name") or ""
     greeting = "Good %s%s" % (part, ", " + name if name else "")

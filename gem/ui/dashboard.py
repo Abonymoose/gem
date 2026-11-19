@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QButtonGroup,
 from .. import actions
 from ..config import DATA_DIR, NOTES_FILE, SETTINGS_FILE, _write_json
 from ..skills import control
+from .. import nettime
 from ..runtime import svc
 from ..state import ALWAYS_LISTENING, MODE_NAMES, PUSH_TO_TALK
 from . import theme as T
@@ -112,7 +113,7 @@ def _clock(ts):
 
 def _when(ts):
     d = datetime.datetime.fromtimestamp(ts)
-    today = datetime.date.today()
+    today = nettime.now().date()
     if d.date() == today:
         return _clock(ts)
     if d.date() == today + datetime.timedelta(days=1):
@@ -121,7 +122,7 @@ def _when(ts):
 
 
 def _left(ts):
-    s = max(0, int(ts - time.time()))
+    s = max(0, int(ts - nettime.time_now()))
     h, r = divmod(s, 3600)
     m, s = divmod(r, 60)
     if h >= 24:
@@ -132,7 +133,7 @@ def _left(ts):
 def _timer_left(item):
     """Time left on a timer, alarm or reminder; frozen for a paused timer."""
     from ..skills import timers
-    return _left(time.time() + timers.remaining(item)) if timers.paused(item) else _left(item["at"])
+    return _left(nettime.time_now() + timers.remaining(item)) if timers.paused(item) else _left(item["at"])
 
 
 # ── Small widgets ────────────────────────────────────────────────────────────

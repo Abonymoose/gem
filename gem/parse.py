@@ -2,6 +2,8 @@
 import datetime
 import re
 
+from . import nettime
+
 _UNITS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
@@ -130,7 +132,7 @@ def duration_phrase(seconds):
 
 
 def clock_phrase(dt, now=None):
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     t = dt.strftime("%I:%M %p").lstrip("0")
     if dt.date() == now.date():
         return t
@@ -146,7 +148,7 @@ def parse_when(text, now=None):
     minutes", "at 7", "at 6:30 pm", "tomorrow at 8 am", "on friday at noon",
     "19:55" and plain ISO timestamps.
     """
-    now = now or datetime.datetime.now()
+    now = now or nettime.now()
     raw = (text or "").strip()
 
     try:   # ISO from the model

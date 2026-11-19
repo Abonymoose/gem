@@ -7,7 +7,6 @@ animate on springs. Clicks pass straight through it to whatever is
 underneath, unless you rest the mouse on it for a moment.
 """
 import ctypes
-import datetime
 import math
 import os
 import time
@@ -17,6 +16,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QConicalGradient, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
+from .. import nettime
 from ..runtime import svc
 from ..state import ALWAYS_LISTENING, PUSH_TO_TALK
 from . import theme as T
@@ -341,7 +341,7 @@ class Island(QWidget):
             except Exception:
                 cls = None
             if cls:
-                mins = max(1, int(round((cls[1] - datetime.datetime.now()).total_seconds() / 60)))
+                mins = max(1, int(round((cls[1] - nettime.now()).total_seconds() / 60)))
                 act = {"kind": "class", "label": cls[0].capitalize(), "value": "in %d min" % mins}
         if act is None:
             try:
