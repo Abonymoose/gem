@@ -149,6 +149,19 @@ def register(rule):
         day = next((g for g in m.groups() if g), "today").replace("on ", "")
         return Match("schedule_list", {"day": "week" if day == "this week" else day})
 
-    @rule(r"^(?:when(?:'s| is) )?(?:my )?next class$|^when(?:'s| is) my next (?:class|lesson|event)$")
+    @rule(r"^(?:when(?:'s| is) )?(?:my )?next class$|^when(?:'s| is) my next (?:class|lesson)$")
     def _(m, t):
         return Match("next_class")
+
+    # Google Calendar
+    days = r"today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+
+    @rule(r"^(?:what's|what is|what do i have|is there anything|anything) (?:on )?(?:my |the )?calendar"
+          r"(?: (?:for |on )?(%s))?$|^(?:check|read|show(?: me)?) my calendar(?: (?:for |on )?(%s))?$|"
+          r"^(?:what|which|any) (?:events|meetings)(?: do i have)?(?: (?:on )?(%s))?$" % (days, days, days))
+    def _(m, t):
+        return Match("calendar_events", {"day": next((g for g in m.groups() if g), "today")})
+
+    @rule(r"^(?:what's|what is) next on my calendar$|^(?:what's|what is|when's|when is) my next (?:event|meeting)$")
+    def _(m, t):
+        return Match("calendar_events", {"day": "next"})

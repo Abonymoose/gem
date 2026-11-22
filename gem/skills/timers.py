@@ -723,6 +723,8 @@ class Scheduler:
                 if minute != last_minute:
                     last_minute = minute
                     self._check_schedule_events(dt)
+                    from . import gcal
+                    gcal.heads_up(dt)
                 self._breaks()
                 self._focus()
                 self._snooze()

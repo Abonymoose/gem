@@ -224,6 +224,8 @@ def main():
     svc.scheduler.start()
     from . import nettime
     nettime.start()                             # the real time, for when the PC's clock is off
+    from .skills import gcal
+    gcal.start()                                # Google Calendar, if its link is set
     CallWatcher(cfg["calls"]).start()
     svc.tray.start()
 

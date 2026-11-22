@@ -336,8 +336,8 @@ class Island(QWidget):
                        "value": _countdown(left), "progress": left / total}
         if act is None:
             try:
-                from ..skills import timers
-                cls = timers.upcoming_class(15)
+                from ..skills import gcal, timers
+                cls = timers.upcoming_class(15) or gcal.upcoming(15)
             except Exception:
                 cls = None
             if cls:

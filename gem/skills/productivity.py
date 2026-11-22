@@ -202,6 +202,12 @@ def briefing():
     lines.append(sched)
     for r in (getattr(sched, "card", None) or {}).get("rows", []):
         rows.append({"icon": "class", "text": "%s  %s" % (r["time"], r["name"].capitalize())})
+    from . import gcal
+    events = gcal.today_lines(now)
+    if events:
+        lines.append("On your calendar: %s." % ", ".join("%s %s" % (t, w if w == "all day" else "at " + w)
+                                                        for w, t in events[:4]))
+        rows += [{"icon": "bell", "text": "%s  %s" % (w.capitalize(), t)} for w, t in events[:4]]
     today_items = [i for i in timers._items() if datetime.datetime.fromtimestamp(i["at"]).date() == now.date()]
     if today_items:
         lines.append("You also have " + ", ".join(timers._describe(i, now) for i in today_items[:3]) + ".")

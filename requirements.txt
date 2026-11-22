@@ -20,3 +20,4 @@ comtypes
 pywin32
 PyAudioWPatch
 lameenc
+recurring-ical-events
