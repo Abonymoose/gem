@@ -3,6 +3,46 @@
 A fast, quiet, genuinely useful voice assistant for Windows. Hold Caps Lock, say what you want, let go.
 Gem runs common commands instantly on your PC and uses Groq's free AI models for everything else.
 
+## Download and install
+
+Gem runs on Windows 10 and 11. You build it from this code once, which takes a few minutes.
+
+1. **Get the code.** On GitHub, click **Code → Download ZIP** and unzip it, or:
+   ```bash
+   git clone https://github.com/Abonymoose/gem.git
+   ```
+2. **Install Python 3.10 or newer** from [python.org](https://www.python.org/downloads/) (tick **Add Python to
+   PATH**) or the Microsoft Store.
+3. **Install what Gem needs.** In a terminal, inside the `gem` folder:
+   ```bash
+   pip install -r requirements.txt pyinstaller
+   ```
+4. **Add your free Groq key** (from [console.groq.com](https://console.groq.com)). It powers speech recognition
+   (Whisper) and the AI. Without it Gem falls back to Google's free recognizer and only local commands work.
+   ```cmd
+   setx GROQ_API_KEY your_key_here
+   ```
+   Then open a new terminal, so it sees the key.
+5. **Build and install:**
+   ```cmd
+   build.bat
+   install.bat
+   ```
+   `build.bat` makes `dist/Gem/` (`Gem.exe` and its `_internal` folder; `hooks/` fixes PyInstaller's packaging of
+   the voice detector). It's a folder rather than one big exe because a single-file exe unpacks itself on every
+   start. `install.bat` copies it to `%LOCALAPPDATA%\Programs\Gem` and starts it; the installed copy adds itself
+   to Start search. Turn on **Start with Windows** in the tray menu or Settings to launch it at sign-in.
+
+The first start downloads Gem's voice (about 60 MB). Then hold Caps Lock and talk.
+
+**To update**, get the new code and run `build.bat` and `install.bat` again. Your settings and data in
+`C:\Users\<you>\.gem\` stay as they are.
+
+**To run without building**, after step 4: `pythonw gem2.py`.
+
+`Gem.exe` isn't code-signed, so Windows may warn about it the first time; it's the program you just built from
+this code.
+
 ## How it looks
 
 Gem lives in a **Dynamic Island**: a small black pill hugging the very top of your screen, like on an iPhone.
@@ -243,25 +283,6 @@ a new one replaces the last, and "stop" or "cancel" also stops a macro that's ru
 
 Phrases, the waiting time and the "Gem, send it" rule are under `"safety"` in `settings.json`.
 
-## Setup
-
-1. Install Python 3.10+.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Set your Groq key (free at [console.groq.com](https://console.groq.com)). It powers speech recognition
-   (Whisper) and the AI. Without it Gem falls back to Google's free recognizer and only local commands work.
-   ```cmd
-   setx GROQ_API_KEY your_key_here
-   ```
-4. Run:
-   ```bash
-   pythonw gem2.py
-   ```
-
-No weather key is needed any more (Gem uses Open-Meteo).
-
 ## Settings and data
 
 Change settings in the Gem window's **Settings** page: voice (with a Test button), look and sound, microphone,
@@ -316,19 +337,6 @@ python -m unittest tests
 Checks that the README's example phrases still route to the right command, that everyday conversation doesn't
 set commands off in always-listening mode, and the time, number, maths and reminder parsing. They run on Linux
 and macOS too (the Windows parts are stubbed) and use a temporary data folder, never your real `.gem`.
-
-## Building the EXE
-
-```bash
-pip install pyinstaller
-build.bat
-install.bat
-```
-
-`build.bat` makes `dist/Gem/` (`Gem.exe` and its `_internal` folder; `hooks/` fixes PyInstaller's packaging of
-the voice detector). It's a folder rather than one big exe because a single-file exe unpacks itself on every
-start. `install.bat` copies it to `%LOCALAPPDATA%\Programs\Gem` and starts it; the installed copy adds itself
-to Start search. Turn on **Start with Windows** in the tray menu or Settings to launch it at sign-in.
 
 ## Privacy
 
